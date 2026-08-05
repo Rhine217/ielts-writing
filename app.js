@@ -2215,10 +2215,25 @@ function clearHighlight() {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || !state.selectedEditor) return;
   const range = selection.getRangeAt(0);
-  if (!state.selectedEditor.contains(range.commonAncestorContainer)) return;
-  range.insertNode(stripHighlights(range.extractContents()));
-  state.selectedEditor.normalize();
-  selection.removeAllRanges();
+  const editor = state.selectedEditor;
+  if (!editor.contains(range.commonAncestorContainer)) return;
+
+  // 找出选区中所有带 data-highlight 的 span，无论选区完全落在内部还是跨越多段，都全部 unwrap
+  const highlighted = editor.querySelectorAll("[data-highlight]");
+  const toUnwrap = [];
+  for (const span of highlighted) {
+    if (range.intersectsNode(span)) toUnwrap.push(span);
+  }
+  // 先处理深层嵌套（reverse 让子级先于父级被 unwrap）
+  toUnwrap.reverse();
+  for (const span of toUnwrap) {
+    const parent = span.parentNode;
+    if (!parent) continue;
+    while (span.firstChild) parent.insertBefore(span.firstChild, span);
+    parent.removeChild(span);
+  }
+
+  editor.normalize();
   updateCurrentFromInputs();
   persist();
   hideToolbar();
