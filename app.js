@@ -645,6 +645,18 @@ function normalizeDimScores(scores = {}) {
   };
 }
 
+function normalizeEvaluation(entry) {
+  if (Array.isArray(entry.evaluation) && entry.evaluation.length > 0) {
+    return entry.evaluation.filter((s) => s.title || s.body);
+  }
+  // 旧文章没有 evaluation → 自动给默认三段
+  return [
+    { title: "亮点", body: "" },
+    { title: "短板", body: "" },
+    { title: "提升路径", body: "" },
+  ];
+}
+
 function normalizeEssayType(mode, type) {
   const options = TASK_TYPES[mode] || TASK_TYPES.task2;
   if (options.includes(type)) return type;
@@ -700,7 +712,7 @@ function normalizeEntry(entry) {
       ...(entry.bank || {}),
     },
     corrections: (entry.corrections || []).map(normalizeCorrection),
-    evaluation: Array.isArray(entry.evaluation) ? entry.evaluation.filter((s) => s.title || s.body) : [],
+    evaluation: normalizeEvaluation(entry),
     stance: entry.stance || "",
     arguments: entry.arguments || "",
   };
