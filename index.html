@@ -267,6 +267,19 @@
           </section>
           <div class="highlight-legend" id="highlightLegend"></div>
 
+          <article class="panel evaluation-panel" id="evaluationPanel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Evaluation</p>
+                <h2>评语</h2>
+              </div>
+              <div class="panel-tools">
+                <button class="secondary-button" id="addEvalSectionBtn" type="button">添加评语段落</button>
+              </div>
+            </div>
+            <div class="evaluation-list" id="evaluationList"></div>
+          </article>
+
           <section class="analysis-grid">
             <article class="panel corrections-panel">
               <details open>
@@ -369,6 +382,16 @@
         </label>
         <button class="remove-button" data-remove-correction>删除</button>
       </article>
+    </template>
+
+    <template id="evalSectionTemplate">
+      <div class="eval-section">
+        <label class="eval-section-header">
+          <input class="eval-section-title" value="" placeholder="段落标题" />
+          <button class="remove-button eval-remove-btn" data-remove-eval type="button" title="删除此段落">×</button>
+        </label>
+        <textarea class="eval-section-body" rows="3" placeholder="写下评语…"></textarea>
+      </div>
     </template>
 
     <!-- 主题选择弹窗 -->
