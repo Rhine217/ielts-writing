@@ -121,6 +121,11 @@ const demoEntries = [
     modelScore: "7",
     draftScores: { tr: "5", cc: "5.5", lr: "5.5", gra: "5" },
     modelScores: { tr: "7", cc: "7", lr: "7.5", gra: "7" },
+    evaluation: [
+      { title: "亮点", body: "用到了 sedentary jobs / long hours / one stop earlier 等具体表达，没有再像以前一样堆 there be 句型。段落意识比上次好，每个 point 后有一点展开。" },
+      { title: "短板", body: "第二段 To solve this problem 后面的列举没有过渡，读起来像购物清单。rely on … too much 这种搭配可以更书面。没有总结句收尾。" },
+      { title: "提升路径", body: "下一篇文章刻意练习：① 每个措施段用一句话总结；② 至少用 2 个非谓语做状语（而不是全用简单句开头）；③ 查一下 too much 在学术写作里的替换。" },
+    ],
     bank: {
       collocations:
         "sedentary lifestyle 久坐的生活方式\ncity zoning 城市分区\nunderlying drivers 根本原因\na multi-pronged approach 多管齐下的方法\npedestrian-only zones 步行专区\nprioritise A over B\ndrive sb toward A rather than B\nincorporate ... into ...",
@@ -164,6 +169,11 @@ const demoEntries = [
     modelScore: "7",
     draftScores: { tr: "5", cc: "5", lr: "5", gra: "5" },
     modelScores: { tr: "7", cc: "7", lr: "7", gra: "7" },
+    evaluation: [
+      { title: "亮点", body: "Overall 句给出了主要趋势，没有堆数字，符合 Task 1 的概述要求。基本结构清楚。" },
+      { title: "短板", body: "expression 重复（two shows / two changes），没有具体数据支撑。线条名称和趋势表达不够多样化。" },
+      { title: "提升路径", body: "下一次练同一类型图时，要求在细节段写出至少 3 个具体数据点，同时练习 while/whereas/in contrast 三种对比句式。" },
+    ],
     bank: {
       collocations: "a marked rise 明显上升\na steady decline 稳定下降\nenergy consumption 能源消耗\nreach a peak 达到峰值",
       chartWords: "show = compare / illustrate / present\nincrease = rise / grow / climb\ndecrease = decline / fall / drop",
@@ -270,6 +280,9 @@ const els = {
   correctionList: $("#correctionList"),
   correctionFilterBar: $("#correctionFilterBar"),
   correctionTemplate: $("#correctionTemplate"),
+  evaluationList: $("#evaluationList"),
+  addEvalSectionBtn: $("#addEvalSectionBtn"),
+  evalSectionTemplate: $("#evalSectionTemplate"),
   selectionToolbar: $("#selectionToolbar"),
   highlightLegend: $("#highlightLegend"),
   bankSubmenu: $("#bankSubmenu"),
@@ -687,6 +700,7 @@ function normalizeEntry(entry) {
       ...(entry.bank || {}),
     },
     corrections: (entry.corrections || []).map(normalizeCorrection),
+    evaluation: Array.isArray(entry.evaluation) ? entry.evaluation.filter((s) => s.title || s.body) : [],
     stance: entry.stance || "",
     arguments: entry.arguments || "",
   };
@@ -797,6 +811,11 @@ function makeEmptyEntry(mode = state.mode) {
     modelScores: {},
     bank: {},
     corrections: [],
+    evaluation: [
+      { title: "亮点", body: "" },
+      { title: "短板", body: "" },
+      { title: "提升路径", body: "" },
+    ],
     stance: "",
     arguments: "",
   });
@@ -1375,6 +1394,7 @@ function renderEditor() {
 
   renderScoreStrip(entry);
   updateStats();
+  renderEvaluation(entry);
   renderCorrections();
   renderBankTabs(entry.mode);
   renderHighlightLegend();
@@ -1516,6 +1536,41 @@ function renderBankTabs(mode) {
   els.detailBankTabs.innerHTML = tabs;
   els.bankText.value = currentEntry()?.bank[state.bankTab] || "";
   renderBankLabelEditor(mode);
+}
+
+/* ---------------- 渲染：评语模块 ---------------- */
+
+function renderEvaluation(entry) {
+  els.evaluationList.innerHTML = "";
+  const sections = entry.evaluation || [];
+  sections.forEach((section, index) => {
+    const node = els.evalSectionTemplate.content.firstElementChild.cloneNode(true);
+    node.dataset.index = index;
+    node.querySelector(".eval-section-title").value = section.title || "";
+    node.querySelector(".eval-section-body").value = section.body || "";
+    els.evaluationList.appendChild(node);
+  });
+}
+
+function addEvaluationSection(title = "") {
+  const entry = currentEntry();
+  if (!entry) return;
+  if (!entry.evaluation) entry.evaluation = [];
+  entry.evaluation.push({ title, body: "" });
+  persist();
+  renderEvaluation(entry);
+}
+
+function readEvaluationFromDOM() {
+  const entry = currentEntry();
+  if (!entry) return;
+  const sections = [];
+  els.evaluationList.querySelectorAll(".eval-section").forEach((node) => {
+    const title = node.querySelector(".eval-section-title").value.trim();
+    const body = node.querySelector(".eval-section-body").value;
+    sections.push({ title, body });
+  });
+  entry.evaluation = sections;
 }
 
 /* ---------------- 渲染：错误标注（筛选 + 自适应高度） ---------------- */
@@ -1697,6 +1752,7 @@ function updateCurrentFromInputs() {
     entry.modelScores[dim.key] = els[`modelScore${key}`].value;
   });
   entry.bank[state.bankTab] = els.bankText.value;
+  readEvaluationFromDOM();
   entry.stance = els.stanceText.value;
   entry.arguments = els.argumentsText.value;
 }
@@ -2035,6 +2091,32 @@ function bindEvents() {
   els.bankText.addEventListener("input", () => {
     updateCurrentFromInputs();
     persist();
+  });
+
+  // —— 评语模块 ——
+  els.addEvalSectionBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    addEvaluationSection("");
+  });
+
+  els.evaluationList.addEventListener("input", (event) => {
+    const target = event.target.closest(".eval-section-title, .eval-section-body");
+    if (!target) return;
+    updateCurrentFromInputs();
+    persist();
+  });
+
+  els.evaluationList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-remove-eval]");
+    if (!button) return;
+    const section = button.closest(".eval-section");
+    if (!section) return;
+    const index = Number(section.dataset.index);
+    const entry = currentEntry();
+    if (!entry || !entry.evaluation) return;
+    entry.evaluation.splice(index, 1);
+    persist();
+    renderEvaluation(entry);
   });
 
   els.detailBankTabs.addEventListener("click", (event) => {
