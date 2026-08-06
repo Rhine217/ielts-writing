@@ -1,3 +1,4 @@
 original/
 ielts-wring-data/
 *.tmp-*
+.claude/
