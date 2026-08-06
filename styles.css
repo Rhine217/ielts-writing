@@ -1508,6 +1508,7 @@ summary strong {
 
 .evaluation-panel .panel-header {
   background: color-mix(in srgb, var(--amber) 5%, var(--panel));
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 
 .evaluation-list {
