@@ -470,6 +470,21 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
   white-space: nowrap;
 }
 
+.dd-option-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dd-option-desc {
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.45;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: normal;
+}
+
 .dd-check {
   margin-left: auto;
   flex: 0 0 auto;

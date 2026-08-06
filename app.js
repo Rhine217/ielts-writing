@@ -28,6 +28,39 @@ const SCORE_DIMENSIONS = [
   { key: "gra", label: "GRA", name: "语法广度与准确性", tip: "Grammatical Range & Accuracy" },
 ];
 
+// 各维度 5-8 分的档位关键特征（用于评分下拉的提示）
+const BAND_DESCRIPTORS = {
+  tr: {
+    "5": "回应部分任务，中心论点不够清晰，支持不足",
+    "6": "回应任务所有部分，但部分观点展开不充分",
+    "7": "回应任务全部要点，立场清晰，观点展开充分",
+    "8": "充分回应，论点紧扣题目，展开与例证完整",
+  },
+  cc: {
+    "5": "衔接不充分，段落划分不清晰，指代易混",
+    "6": "衔接整体有效，偶尔重复或用词不够自然",
+    "7": "逻辑清晰，段落组织合理，衔接自然",
+    "8": "段落组织灵活，衔接流畅，信息布局巧妙",
+  },
+  lr: {
+    "5": "词汇量有限，搭配与拼写错误较多",
+    "6": "词汇量足够，部分用词不够精确地道",
+    "7": "词汇丰富，能使用较不常见词，搭配自然",
+    "8": "词汇运用广泛灵活，选词精准，风格自然",
+  },
+  gra: {
+    "5": "句式较单调，语法错误影响理解",
+    "6": "简单句与复杂句混合，错误偶发但不影响理解",
+    "7": "句式多样，多数句子语法准确",
+    "8": "语法结构多样且准确，仅个别口误级瑕疵",
+  },
+};
+// 每个评分下拉对应的维度 key（总分下拉不显示描述）
+const SCORE_SELECT_DIMENSION = {
+  draftScoreTR: "tr", draftScoreCC: "cc", draftScoreLR: "lr", draftScoreGRA: "gra",
+  modelScoreTR: "tr", modelScoreCC: "cc", modelScoreLR: "lr", modelScoreGRA: "gra",
+};
+
 const CORRECTION_KINDS = [
   { kind: "语法", color: "#f28d78" },
   { kind: "词汇", color: "#e8a62e" },
@@ -83,7 +116,7 @@ const THEMES = {
 const STORAGE_KEY = "ielts-writing-review-v4";
 const LEGACY_KEYS = ["ielts-writing-review-v3", "ielts-writing-review-v2", "ielts-writing-review-v1"];
 const PREF_KEY = "ielts-writing-review-preferences-v2";
-const BACKUP_VERSION = 2;
+const DATA_VERSION = 3;
 const LIBRARY_PAGE_SIZE = 6;
 const SUMMARY_DEFAULT =
   "大作文：先判断题型，再决定段落任务。单边讨论要立场清晰，双边讨论要两边都回应，问题措施要原因和措施对应，复合问题要逐问回答。\n\n小作文：先写总览，再分组写细节。不要一上来堆数字，先看最高、最低、变化最大、趋势相反。\n\n考前提醒：少写空泛词，多写具体动作；注意 government / environment / convenient / comparison 这些易错拼写。";
@@ -225,6 +258,8 @@ const state = {
   pendingFileName: "",
   autoSave: true,
   fileLastSaved: "",
+  // 绑定文件时记录的磁盘文件最后修改时间，用于写入前冲突检测
+  fileLastModified: null,
 };
 
 /* ---------------- DOM 引用 ---------------- */
@@ -239,6 +274,7 @@ const els = {
   detailView: $("#detailView"),
   metricGrid: $("#metricGrid"),
   entryList: $("#entryList"),
+  entrySearch: $("#entrySearch"),
   typeFilter: $("#typeFilter"),
   topicFilter: $("#topicFilter"),
   topicFilterField: $("#topicFilterField"),
@@ -302,6 +338,7 @@ const els = {
   libraryBankTabs: $("#libraryBankTabs"),
   libraryContent: $("#libraryContent"),
   libraryPagination: $("#libraryPagination"),
+  exportEntryBtn: $("#exportEntryBtn"),
   syncStatus: $("#syncStatus"),
   syncBadge: $("#syncBadge"),
   openFileBtn: $("#openFileBtn"),
@@ -483,8 +520,10 @@ class CustomSelect {
       button.dataset.index = String(i);
       button.setAttribute("role", "option");
       const text = option.textContent.trim();
-      button.innerHTML = `<span class="dd-option-text"></span><span class="dd-check" aria-hidden="true">✓</span>`;
+      const desc = option.dataset?.desc || "";
+      button.innerHTML = `<span class="dd-option-copy"><span class="dd-option-text"></span>${desc ? `<em class="dd-option-desc"></em>` : ""}</span><span class="dd-check" aria-hidden="true">✓</span>`;
       button.querySelector(".dd-option-text").textContent = text;
+      if (desc) button.querySelector(".dd-option-desc").textContent = desc;
       button.addEventListener("pointerdown", (event) => {
         event.preventDefault();
         this.choose(i);
@@ -748,11 +787,25 @@ function buildDataFile() {
   updateCurrentFromInputs();
   return {
     app: "ielts-writing-review",
-    version: BACKUP_VERSION,
+    version: DATA_VERSION,
     kind: "data",
     exportedAt: new Date().toISOString(),
     entries: clone(state.entries),
     preferences: buildPreferences(),
+  };
+}
+
+/* 数据迁移：统一入口，旧版本/无版本数据一律经 normalizeEntry 归一化，
+ * 返回最新版本号。migrated 为 true 表示数据被升级过（可在后续保存时回写）。 */
+function migrateData(data) {
+  const version = Number(data?.version) || 0;
+  let entries = Array.isArray(data) ? data : data.entries;
+  if (!Array.isArray(entries)) throw new Error("Invalid data file");
+  return {
+    version: DATA_VERSION,
+    migrated: version !== DATA_VERSION,
+    entries: entries.map(normalizeEntry),
+    preferences: data?.preferences || {},
   };
 }
 
@@ -794,14 +847,22 @@ function loadLocalEntries() {
   persist({ skipFile: true });
 }
 
-function persist({ skipFile = false } = {}) {
+let persistTimer = null;
+function flushPersist() {
+  persistTimer = null;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.entries));
     localStorage.setItem(PREF_KEY, JSON.stringify(buildPreferences()));
   } catch (error) {
     console.warn("localStorage 写入失败", error);
   }
+}
+
+function persist({ skipFile = false } = {}) {
   if (!skipFile && state.fileHandle && state.autoSave) scheduleFileSave();
+  // localStorage 写入防抖：连续输入只写一次，页面关闭前强制落盘
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(flushPersist, 400);
 }
 
 function makeEmptyEntry(mode = state.mode) {
@@ -895,10 +956,7 @@ function mergePreferences(prefs = {}) {
 }
 
 function parseDataText(text) {
-  const data = JSON.parse(text);
-  const entries = Array.isArray(data) ? data : data.entries;
-  if (!Array.isArray(entries)) throw new Error("Invalid data file");
-  return { entries, preferences: data.preferences || {} };
+  return migrateData(JSON.parse(text));
 }
 
 async function adoptFile(handle, text, autoSave = true, nameOverride = "") {
@@ -913,6 +971,7 @@ async function adoptFile(handle, text, autoSave = true, nameOverride = "") {
     state.libraryPage = 1;
     state.bankTab = "collocations";
     state.fileHandle = handle || null;
+    state.fileLastModified = handle ? (await handle.getFile()).lastModified : null;
     state.fileName = nameOverride || handle?.name || preferences.file?.name || "已选择的文件";
     state.autoSave = autoSave;
     state.pendingFileName = "";
@@ -994,6 +1053,7 @@ async function createDataFile() {
     }
     // 用当前数据初始化新文件，之后自动保存
     state.fileHandle = fileHandle;
+    state.fileLastModified = null;
     state.fileName = fileName;
     state.autoSave = true;
     state.pendingFileName = "";
@@ -1029,9 +1089,24 @@ async function performWriteToFile() {
         return false;
       }
     }
+    // 冲突检测：文件自绑定以来被其他设备/程序改过 → 提示是否覆盖
+    if (state.fileLastModified != null) {
+      const diskFile = await state.fileHandle.getFile();
+      if (diskFile.lastModified !== state.fileLastModified) {
+        const overwrite = window.confirm(
+          `文件「${state.fileName}」自加载后已被其他设备或程序修改过。\n继续保存会覆盖这些外部修改。\n\n确定覆盖吗？`,
+        );
+        if (!overwrite) {
+          showToast("已取消保存，避免覆盖外部修改", "error");
+          return false;
+        }
+      }
+    }
     const writable = await state.fileHandle.createWritable();
     await writable.write(JSON.stringify(buildDataFile(), null, 2));
     await writable.close();
+    const savedFile = await state.fileHandle.getFile();
+    state.fileLastModified = savedFile.lastModified;
     state.fileLastSaved = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     renderSyncStatus();
     return true;
@@ -1078,6 +1153,7 @@ async function restoreFileBinding() {
     state.entries = entries.map(normalizeEntry);
     mergePreferences(preferences);
     state.fileHandle = handle;
+    state.fileLastModified = file.lastModified;
     state.fileName = handle.name || state.fileName;
     state.pendingFileName = "";
     applyTheme(state.theme);
@@ -1161,12 +1237,12 @@ function importBackup(file) {
   reader.addEventListener("load", () => {
     try {
       const data = JSON.parse(String(reader.result || ""));
-      const entries = Array.isArray(data) ? data : data.entries;
-      if (!Array.isArray(entries)) throw new Error("Invalid backup");
+      const migrated = migrateData(data);
+      const entries = migrated.entries;
       if (!window.confirm("导入后会替换当前的所有复盘数据（包括已绑定文件里的内容），确定继续吗？")) return;
 
       state.entries = entries.map(normalizeEntry);
-      mergePreferences(data.preferences || {});
+      mergePreferences(migrated.preferences);
       state.currentId = "";
       state.mode = "task2";
       state.libraryMode = "task2";
@@ -1187,10 +1263,117 @@ function importBackup(file) {
   reader.readAsText(file);
 }
 
+/* ---------------- 导出单篇复盘（Markdown） ---------------- */
+
+function htmlToText(html) {
+  const div = document.createElement("div");
+  div.innerHTML = html || "";
+  return div.textContent || "";
+}
+
+function exportEntryMarkdown() {
+  const entry = currentEntry();
+  if (!entry) return;
+  const lines = [];
+  lines.push(`# ${entry.title || "未命名复盘"}`);
+  lines.push("");
+  lines.push(`- 类型：${entry.mode === "task2" ? "大作文" : "小作文"} · ${entry.essayType}${entry.topic ? ` · ${entry.topic}` : ""} · ${entry.practiceDate || "未记录日期"}`);
+  if (entry.prompt) {
+    lines.push("", "## 题目");
+    lines.push(entry.prompt);
+  }
+  if (entry.meaning) {
+    lines.push("", "## 题目意思（中文）");
+    lines.push(entry.meaning);
+  }
+  const draft = htmlToText(entry.draftHtml);
+  const model = htmlToText(entry.modelHtml);
+  if (draft) {
+    lines.push("", "## 我的版本");
+    lines.push(draft);
+  }
+  if (model) {
+    lines.push("", "## 范文版本");
+    lines.push(model);
+  }
+  const scoreLine = (label, score, dims) => {
+    const parts = [];
+    if (score) parts.push(`总分 ${score}`);
+    if (dims) {
+      ["tr", "cc", "lr", "gra"].forEach((key) => {
+        if (dims[key]) parts.push(`${key.toUpperCase()} ${dims[key]}`);
+      });
+    }
+    return parts.length ? `${label}：${parts.join(" · ")}` : "";
+  };
+  const draftScoreLine = scoreLine("我的版本", entry.draftScore, entry.draftScores);
+  const modelScoreLine = scoreLine("范文版本", entry.modelScore, entry.modelScores);
+  if (draftScoreLine || modelScoreLine) {
+    lines.push("", "## 得分");
+    if (draftScoreLine) lines.push(draftScoreLine);
+    if (modelScoreLine) lines.push(modelScoreLine);
+  }
+  if (entry.evaluation?.length) {
+    lines.push("", "## 评语");
+    entry.evaluation.forEach((section) => {
+      lines.push(`### ${section.title || "段落"}`);
+      lines.push(section.body || "");
+      lines.push("");
+    });
+  }
+  if (entry.corrections?.length) {
+    lines.push("", "## 错误标注");
+    entry.corrections.forEach((correction, index) => {
+      lines.push(`**${index + 1}. [${correction.kind}] ${correction.source}**`);
+      if (correction.fix) lines.push(`- 修改：${correction.fix}`);
+      if (correction.comment) lines.push(`- 批注：${correction.comment}`);
+    });
+  }
+  const bankEntries = Object.entries(entry.bank || {}).filter(([, value]) => value && value.trim());
+  if (bankEntries.length) {
+    lines.push("", "## 素材沉淀");
+    const schema = getBankSchema(entry.mode);
+    bankEntries.forEach(([key, value]) => {
+      lines.push(`### ${schema[key] || key}`);
+      lines.push(value);
+      lines.push("");
+    });
+  }
+  if (entry.stance) {
+    lines.push("", "## 整体思路");
+    lines.push(entry.stance);
+  }
+  if (entry.arguments) {
+    lines.push("", "## 论点与论据");
+    lines.push(entry.arguments);
+  }
+  const markdown = `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${(entry.title || "复盘").replace(/[\\/:*?"<>|]/g, "_")}.md`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast("已导出复盘 Markdown");
+}
+
 /* ---------------- 渲染：选项与评分 ---------------- */
 
+function bandDescFor(select, score) {
+  const dim = SCORE_SELECT_DIMENSION[select.id];
+  if (!dim || !score) return "";
+  return BAND_DESCRIPTORS[dim]?.[score] || "";
+}
+
 function fillScoreSelect(select) {
-  select.innerHTML = SCORE_OPTIONS.map((score) => `<option value="${score}">${score || "未记录"}</option>`).join("");
+  select.innerHTML = SCORE_OPTIONS.map((score) => {
+    const desc = bandDescFor(select, score);
+    const attr = desc ? ` title="${escapeHtml(desc)}" data-desc="${escapeHtml(desc)}"` : "";
+    return `<option value="${score}"${attr}>${score || "未记录"}</option>`;
+  }).join("");
 }
 
 function renderTypeOptions() {
@@ -1344,10 +1527,14 @@ function renderSummary() {
 function renderEntryList() {
   const typeFilter = els.typeFilter.value || "all";
   const topicFilter = els.topicFilter.value || "all";
+  const query = (els.entrySearch.value || "").trim().toLowerCase();
   const entries = state.entries.filter((entry) => {
     const typeMatch = entry.mode === state.mode && (typeFilter === "all" || entry.essayType === typeFilter);
     const topicMatch = state.mode !== "task2" || topicFilter === "all" || entry.topic === topicFilter;
-    return typeMatch && topicMatch;
+    if (!typeMatch || !topicMatch) return false;
+    if (!query) return true;
+    const haystack = [entry.title, entry.topic, entry.essayType, entry.prompt, entry.meaning].join(" ").toLowerCase();
+    return haystack.includes(query);
   });
 
   els.entryList.innerHTML = entries
@@ -1809,6 +1996,7 @@ function bindEvents() {
           types: [{ description: "JSON 数据文件", accept: { "application/json": [".json"] } }],
         });
         state.fileHandle = handle;
+        state.fileLastModified = null;
         state.fileName = handle.name;
         state.autoSave = true;
         await storeFileHandle(handle);
@@ -1882,6 +2070,7 @@ function bindEvents() {
   });
 
   $("#backHomeBtn").addEventListener("click", showHome);
+  els.exportEntryBtn.addEventListener("click", exportEntryMarkdown);
   els.openLibraryBtn.addEventListener("click", showLibrary);
   els.libraryHomeBtn.addEventListener("click", showHome);
 
@@ -1950,6 +2139,7 @@ function bindEvents() {
 
   els.typeFilter.addEventListener("change", renderEntryList);
   els.topicFilter.addEventListener("change", renderEntryList);
+  els.entrySearch.addEventListener("input", renderEntryList);
 
   els.entryList.addEventListener("click", (event) => {
     const card = event.target.closest("[data-entry-id]");
@@ -2005,13 +2195,16 @@ function bindEvents() {
     const file = els.taskImageInput.files?.[0];
     const entry = currentEntry();
     if (!file || !entry) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      entry.taskImage = String(reader.result || "");
-      persist();
-      renderTaskImage(entry);
-    };
-    reader.readAsDataURL(file);
+    compressImage(file)
+      .then((dataUrl) => {
+        entry.taskImage = dataUrl;
+        persist();
+        renderTaskImage(entry);
+        showToast("图片已压缩（≤1600px · JPEG）后保存");
+      })
+      .catch((error) => {
+        showToast(`图片处理失败：${error.message}`, "error");
+      });
   });
 
   els.removeTaskImageBtn.addEventListener("click", () => {
@@ -2234,6 +2427,38 @@ function closeImageModal() {
   els.imageModalImg.removeAttribute("src");
 }
 
+/* 题目图片压缩：等比缩放到 maxWidth 以内，转 JPEG 输出。
+ * 原图（尤其手机截图）base64 后可到 3-5MB，会把 localStorage 配额撑爆；
+ * 压缩后通常 <300KB。 */
+function compressImage(file, maxWidth = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("图片读取失败"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        // JPEG 不支持透明通道，先铺白底再绘制
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function handleEditorPaste(event, editor) {
   event.preventDefault();
   const text = event.clipboardData?.getData("text/plain") || "";
@@ -2255,13 +2480,17 @@ function insertPlainText(editor, text) {
     editor.appendChild(document.createTextNode(text));
     return;
   }
-  range.deleteContents();
-  const node = document.createTextNode(text);
-  range.insertNode(node);
-  range.setStartAfter(node);
-  range.setEndAfter(node);
-  selection.removeAllRanges();
-  selection.addRange(range);
+  // execCommand("insertText") 可被原生 Ctrl+Z 撤销
+  const ok = document.execCommand("insertText", false, text);
+  if (!ok) {
+    range.deleteContents();
+    const node = document.createTextNode(text);
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.setEndAfter(node);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
 }
 
 function showToolbarForSelection(editor) {
@@ -2290,15 +2519,26 @@ function applyHighlight(color) {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || !state.selectedEditor) return;
   const range = selection.getRangeAt(0);
-  if (!state.selectedEditor.contains(range.commonAncestorContainer)) return;
+  const editor = state.selectedEditor;
+  if (!editor.contains(range.commonAncestorContainer)) return;
 
-  const fragment = stripHighlights(range.extractContents());
+  // 取选区内容并去掉内部已有高亮，包上新 span。
+  // 用 execCommand("insertHTML") 插入，使该操作进入浏览器原生撤销栈（Ctrl+Z 可撤销）。
+  const container = document.createElement("div");
+  container.appendChild(stripHighlights(range.cloneContents()));
   const span = document.createElement("span");
   span.style.backgroundColor = color;
   span.dataset.highlight = color;
-  span.appendChild(fragment);
-  range.insertNode(span);
-  state.selectedEditor.normalize();
+  span.innerHTML = container.innerHTML;
+  const ok = document.execCommand("insertHTML", false, span.outerHTML);
+  if (!ok) {
+    // 兜底：手动替换选区
+    const fragment = stripHighlights(range.extractContents());
+    span.innerHTML = "";
+    span.appendChild(fragment);
+    range.insertNode(span);
+  }
+  editor.normalize();
   selection.removeAllRanges();
   updateCurrentFromInputs();
   persist();
@@ -2312,19 +2552,25 @@ function clearHighlight() {
   const editor = state.selectedEditor;
   if (!editor.contains(range.commonAncestorContainer)) return;
 
-  // 找出选区中所有带 data-highlight 的 span，无论选区完全落在内部还是跨越多段，都全部 unwrap
-  const highlighted = editor.querySelectorAll("[data-highlight]");
-  const toUnwrap = [];
-  for (const span of highlighted) {
-    if (range.intersectsNode(span)) toUnwrap.push(span);
-  }
-  // 先处理深层嵌套（reverse 让子级先于父级被 unwrap）
-  toUnwrap.reverse();
-  for (const span of toUnwrap) {
-    const parent = span.parentNode;
-    if (!parent) continue;
-    while (span.firstChild) parent.insertBefore(span.firstChild, span);
-    parent.removeChild(span);
+  // 用去掉高亮后的选区内容替换选区，同样走 execCommand 以保留原生撤销
+  const container = document.createElement("div");
+  container.appendChild(stripHighlights(range.cloneContents()));
+  const ok = document.execCommand("insertHTML", false, container.innerHTML);
+  if (!ok) {
+    // 兜底：手动找出选区相交的所有高亮 span 并 unwrap
+    const highlighted = editor.querySelectorAll("[data-highlight]");
+    const toUnwrap = [];
+    for (const span of highlighted) {
+      if (range.intersectsNode(span)) toUnwrap.push(span);
+    }
+    // 先处理深层嵌套（reverse 让子级先于父级被 unwrap）
+    toUnwrap.reverse();
+    for (const span of toUnwrap) {
+      const parent = span.parentNode;
+      if (!parent) continue;
+      while (span.firstChild) parent.insertBefore(span.firstChild, span);
+      parent.removeChild(span);
+    }
   }
 
   editor.normalize();
@@ -2409,6 +2655,16 @@ function init() {
   applyTheme(state.theme);
   bindEvents();
   renderThemeSwatches();
+
+  // 页面关闭/隐藏前把防抖中的写入立即落盘，避免丢最后几秒的输入
+  window.addEventListener("beforeunload", () => {
+    clearTimeout(persistTimer);
+    flushPersist();
+  });
+  window.addEventListener("pagehide", () => {
+    clearTimeout(persistTimer);
+    flushPersist();
+  });
 
   // 增强静态下拉框
   [
