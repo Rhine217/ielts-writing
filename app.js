@@ -245,6 +245,7 @@ const state = {
   bankTab: "collocations",
   selectedEditor: null,
   selectedText: "",
+  highlightTarget: null,
   highlightLabels: Object.fromEntries(HIGHLIGHTS),
   bankLabels: clone(BANK_SCHEMAS),
   editingBankLabels: false,
@@ -321,6 +322,8 @@ const els = {
   addEvalSectionBtn: $("#addEvalSectionBtn"),
   evalSectionTemplate: $("#evalSectionTemplate"),
   selectionToolbar: $("#selectionToolbar"),
+  highlightToolbar: $("#highlightToolbar"),
+  clearHighlightBtn: $("#clearHighlightBtn"),
   highlightLegend: $("#highlightLegend"),
   bankSubmenu: $("#bankSubmenu"),
   detailBankTabs: $("#detailBankTabs"),
@@ -2458,6 +2461,12 @@ function bindEvents() {
     });
     editor.addEventListener("mouseup", () => showToolbarForSelection(editor));
     editor.addEventListener("keyup", () => showToolbarForSelection(editor));
+    // 点击已高亮的文字 → 弹出清除高亮浮层
+    editor.addEventListener("click", (event) => {
+      const span = event.target.closest?.("[data-highlight]");
+      if (span) showHighlightToolbar(span);
+      else hideHighlightToolbar();
+    });
   });
 
   document.addEventListener("selectionchange", () => {
@@ -2469,6 +2478,7 @@ function bindEvents() {
 
   document.addEventListener("pointerdown", (event) => {
     if (event.target.closest(".selection-toolbar")) return;
+    if (event.target.closest(".highlight-toolbar")) return;
     if (event.target.closest(".dd, .dd-panel")) return;
     if (!event.target.closest(".theme-popover, #themeToggleBtn")) {
       closeThemePopover();
@@ -2481,12 +2491,14 @@ function bindEvents() {
       return;
     }
     hideToolbar();
+    hideHighlightToolbar();
     closeAllSelects();
   });
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hideToolbar();
+      hideHighlightToolbar();
       closeImageModal();
       closeImportModal();
       closeAllSelects();
@@ -2503,15 +2515,17 @@ function bindEvents() {
   });
 
   els.selectionToolbar.addEventListener("pointerdown", (event) => event.preventDefault());
+  els.highlightToolbar.addEventListener("pointerdown", (event) => event.preventDefault());
 
   els.selectionToolbar.addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button) return;
     if (button.dataset.highlight) applyHighlight(button.dataset.highlight);
-    if (button.dataset.clearHighlight !== undefined) clearHighlight();
     if (button.dataset.addCorrection) addSelectionToCorrection(button.dataset.addCorrection);
     if (button.dataset.addBank) addSelectionToBank(button.dataset.addBank);
   });
+
+  els.clearHighlightBtn.addEventListener("click", clearHighlightAt);
 
   els.bankText.addEventListener("input", () => {
     updateCurrentFromInputs();
@@ -2722,6 +2736,7 @@ function showToolbarForSelection(editor) {
 
   state.selectedEditor = editor;
   state.selectedText = text;
+  hideHighlightToolbar();
   const rect = selection.getRangeAt(0).getBoundingClientRect();
   const toolbarWidth = 156;
   const left = Math.min(window.innerWidth - toolbarWidth - 10, rect.right + 12);
@@ -2766,38 +2781,37 @@ function applyHighlight(color) {
   hideToolbar();
 }
 
-function clearHighlight() {
-  const selection = window.getSelection();
-  if (!selection || selection.isCollapsed || !state.selectedEditor) return;
-  const range = selection.getRangeAt(0);
-  const editor = state.selectedEditor;
-  if (!editor.contains(range.commonAncestorContainer)) return;
+/* 点击已高亮文字：弹出"清除高亮"浮层 */
+function showHighlightToolbar(span) {
+  if (!span || !span.isConnected) return;
+  state.highlightTarget = span;
+  hideToolbar();
+  const rect = span.getBoundingClientRect();
+  const toolbarWidth = 100;
+  const left = Math.max(8, Math.min(rect.left + rect.width / 2 - toolbarWidth / 2, window.innerWidth - toolbarWidth - 8));
+  const top = rect.bottom + 6;
+  els.highlightToolbar.style.left = `${left}px`;
+  els.highlightToolbar.style.top = `${top + 44 > window.innerHeight ? Math.max(8, rect.top - 44) : top}px`;
+  els.highlightToolbar.classList.remove("hidden");
+}
 
-  // 用去掉高亮后的选区内容替换选区，同样走 execCommand 以保留原生撤销
-  const container = document.createElement("div");
-  container.appendChild(stripHighlights(range.cloneContents()));
-  const ok = document.execCommand("insertHTML", false, container.innerHTML);
-  if (!ok) {
-    // 兜底：手动找出选区相交的所有高亮 span 并 unwrap
-    const highlighted = editor.querySelectorAll("[data-highlight]");
-    const toUnwrap = [];
-    for (const span of highlighted) {
-      if (range.intersectsNode(span)) toUnwrap.push(span);
-    }
-    // 先处理深层嵌套（reverse 让子级先于父级被 unwrap）
-    toUnwrap.reverse();
-    for (const span of toUnwrap) {
-      const parent = span.parentNode;
-      if (!parent) continue;
-      while (span.firstChild) parent.insertBefore(span.firstChild, span);
-      parent.removeChild(span);
-    }
-  }
+function hideHighlightToolbar() {
+  els.highlightToolbar.classList.add("hidden");
+  state.highlightTarget = null;
+}
 
-  editor.normalize();
+/* 清除点击的那一段高亮（unwrap span，保留文字） */
+function clearHighlightAt() {
+  const span = state.highlightTarget;
+  if (!span || !span.isConnected) return;
+  const editor = span.closest(".rich-editor");
+  const parent = span.parentNode;
+  while (span.firstChild) parent.insertBefore(span.firstChild, span);
+  parent.removeChild(span);
+  if (editor) editor.normalize();
   updateCurrentFromInputs();
   persist();
-  hideToolbar();
+  hideHighlightToolbar();
 }
 
 function stripHighlights(fragment) {

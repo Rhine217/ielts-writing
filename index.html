@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=7" />
+    <link rel="stylesheet" href="styles.css?v=8" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -357,7 +357,6 @@
         <button data-highlight="#ffc9c1">红色高亮</button>
         <button data-highlight="#b9dcff">蓝色高亮</button>
         <button data-highlight="#c7efd5">绿色高亮</button>
-        <button data-clear-highlight>清除高亮</button>
       </div>
       <div class="toolbar-group submenu-wrap">
         <button>加入错误标注 ›</button>
@@ -371,6 +370,11 @@
         <button>加入素材沉淀 ›</button>
         <div class="submenu" id="bankSubmenu"></div>
       </div>
+    </div>
+
+    <!-- 点击已高亮文字时弹出的清除浮层 -->
+    <div class="highlight-toolbar hidden" id="highlightToolbar" aria-label="清除高亮">
+      <button id="clearHighlightBtn" type="button">清除高亮</button>
     </div>
 
     <template id="correctionTemplate">
@@ -428,6 +432,6 @@
 
     <input type="file" id="fileOpenInput" accept="application/json,.json" class="hidden" aria-hidden="true" tabindex="-1" />
 
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=8"></script>
   </body>
 </html>

@@ -1865,6 +1865,38 @@ summary strong {
   text-align: left;
 }
 
+/* 点击已高亮文字时弹出的清除浮层 */
+.highlight-toolbar {
+  position: fixed;
+  z-index: 21;
+  display: grid;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.highlight-toolbar.hidden {
+  display: none;
+}
+
+.highlight-toolbar button {
+  min-height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.highlight-toolbar button:hover {
+  background: color-mix(in srgb, var(--red) 9%, var(--panel));
+}
+
 .toolbar-group {
   display: grid;
   gap: 5px;
