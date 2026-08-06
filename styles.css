@@ -295,6 +295,22 @@ summary {
   margin-bottom: 16px;
 }
 
+/* 侧栏搜索框：与下方目录列表留出间距，占位提示字号调小 */
+.entry-search-field {
+  margin-bottom: 14px;
+}
+
+.entry-search-field input {
+  height: 36px;
+  font-size: 12.5px;
+}
+
+.entry-search-field input::placeholder {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.75;
+}
+
 /* ---------------- 表单控件 ---------------- */
 
 .field {
