@@ -1748,6 +1748,8 @@ function renderEvaluation(entry) {
     node.querySelector(".eval-section-title").value = section.title || "";
     node.querySelector(".eval-section-body").value = section.body || "";
     els.evaluationList.appendChild(node);
+    // 评语正文：默认一行，随内容自动增高
+    scheduleGrow(node.querySelector(".eval-section-body"), 40);
   });
 }
 
@@ -1774,17 +1776,17 @@ function readEvaluationFromDOM() {
 
 /* ---------------- 渲染：错误标注（筛选 + 自适应高度） ---------------- */
 
-function autoGrowTextarea(textarea) {
+function autoGrowTextarea(textarea, minHeight = 46) {
   textarea.style.height = "auto";
   // box-sizing 为 border-box，height 含边框，需补回边框高度才能完整显示内容
   const style = getComputedStyle(textarea);
   const border = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
-  textarea.style.height = `${Math.max(textarea.scrollHeight + border, 46)}px`;
+  textarea.style.height = `${Math.max(textarea.scrollHeight + border, minHeight)}px`;
 }
 
 // 等两帧再测量，让字体加载/文本重排落定，避免高度被低估而截断
-function scheduleGrow(textarea) {
-  requestAnimationFrame(() => requestAnimationFrame(() => autoGrowTextarea(textarea)));
+function scheduleGrow(textarea, minHeight = 46) {
+  requestAnimationFrame(() => requestAnimationFrame(() => autoGrowTextarea(textarea, minHeight)));
 }
 
 function regrowCorrectionTextareas() {
@@ -2307,6 +2309,7 @@ function bindEvents() {
   els.evaluationList.addEventListener("input", (event) => {
     const target = event.target.closest(".eval-section-title, .eval-section-body");
     if (!target) return;
+    if (target.classList.contains("eval-section-body")) scheduleGrow(target, 40);
     updateCurrentFromInputs();
     persist();
   });

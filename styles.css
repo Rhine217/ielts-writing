@@ -1601,7 +1601,7 @@ summary strong {
 }
 
 .eval-section-body {
-  min-height: 80px;
+  min-height: 40px;
   padding: 9px 11px;
   border: 0;
   border-radius: 0;
@@ -1609,7 +1609,7 @@ summary strong {
   color: var(--ink);
   font-size: 13px;
   line-height: 1.7;
-  resize: vertical;
+  resize: none;
 }
 
 .eval-section-body:focus {
