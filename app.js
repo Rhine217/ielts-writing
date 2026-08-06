@@ -287,6 +287,7 @@ const els = {
   promptText: $("#promptText"),
   meaningText: $("#meaningText"),
   practiceDate: $("#practiceDate"),
+  entrySource: $("#entrySource"),
   taskImageField: $("#taskImageField"),
   taskImageInput: $("#taskImageInput"),
   taskImagePreview: $("#taskImagePreview"),
@@ -339,6 +340,12 @@ const els = {
   libraryContent: $("#libraryContent"),
   libraryPagination: $("#libraryPagination"),
   exportEntryBtn: $("#exportEntryBtn"),
+  importEntryBtn: $("#importEntryBtn"),
+  importModal: $("#importModal"),
+  importText: $("#importText"),
+  importModalClose: $("#importModalClose"),
+  importCancelBtn: $("#importCancelBtn"),
+  importConfirmBtn: $("#importConfirmBtn"),
   syncStatus: $("#syncStatus"),
   syncBadge: $("#syncBadge"),
   openFileBtn: $("#openFileBtn"),
@@ -711,14 +718,12 @@ function inferTopic(tags = "") {
 }
 
 function normalizeCorrection(correction) {
-  const reason = correction.reason || "";
-  const comment = correction.comment || "";
-  const mergedComment = [reason, comment].filter(Boolean).join(comment && reason ? "\n" : "");
   const kind = CORRECTION_KINDS.some((c) => c.kind === correction.kind) ? correction.kind : "语法";
   return {
     source: correction.source || "",
     fix: correction.fix || "",
-    comment: mergedComment,
+    reason: correction.reason || "",
+    comment: correction.comment || "",
     kind,
   };
 }
@@ -730,6 +735,7 @@ function normalizeEntry(entry) {
     essayType: normalizeEssayType(entry.mode, entry.essayType),
     topic: entry.mode === "task2" ? inferredTopic || TASK2_TOPICS[0] : "",
     practiceDate: entry.practiceDate || "",
+    source: entry.source || "",
     taskImage: entry.taskImage || "",
     prompt: entry.prompt || "",
     meaning: entry.meaning || "",
@@ -873,6 +879,7 @@ function makeEmptyEntry(mode = state.mode) {
     essayType: TASK_TYPES[mode][0],
     topic: mode === "task2" ? TASK2_TOPICS[0] : "",
     practiceDate: new Date().toISOString().slice(0, 10),
+    source: "",
     taskImage: "",
     prompt: "",
     meaning: "",
@@ -1277,7 +1284,8 @@ function exportEntryMarkdown() {
   const lines = [];
   lines.push(`# ${entry.title || "未命名复盘"}`);
   lines.push("");
-  lines.push(`- 类型：${entry.mode === "task2" ? "大作文" : "小作文"} · ${entry.essayType}${entry.topic ? ` · ${entry.topic}` : ""} · ${entry.practiceDate || "未记录日期"}`);
+  const sourcePart = entry.source ? ` · 来源：${entry.source}` : "";
+  lines.push(`- 类型：${entry.mode === "task2" ? "大作文" : "小作文"} · ${entry.essayType}${entry.topic ? ` · ${entry.topic}` : ""} · ${entry.practiceDate || "未记录日期"}${sourcePart}`);
   if (entry.prompt) {
     lines.push("", "## 题目");
     lines.push(entry.prompt);
@@ -1358,6 +1366,155 @@ function exportEntryMarkdown() {
   link.remove();
   URL.revokeObjectURL(url);
   showToast("已导出复盘 Markdown");
+}
+
+/* ---------------- 批改结果一键导入 ---------------- */
+
+const IMPORT_SECTIONS = ["【分数】", "【评语】", "【错误】", "【表达】", "【范文】", "【思路】"];
+const CORRECTION_LINE_RE = /^\[([^\]]+)\]\s*原句[：:]\s*(.*?)\s*｜\s*原因[：:]\s*(.*?)\s*｜\s*修改[：:]\s*(.*?)\s*｜\s*提升[：:]\s*(.*)$/;
+
+/* 取某个标记段落的正文（到下一个标记为止） */
+function importSection(text, marker) {
+  const start = text.indexOf(marker);
+  if (start < 0) return "";
+  const from = start + marker.length;
+  let end = text.length;
+  for (const other of IMPORT_SECTIONS) {
+    if (other === marker) continue;
+    const idx = text.indexOf(other, from);
+    if (idx > 0 && idx < end) end = idx;
+  }
+  return text.slice(from, end).trim();
+}
+
+function parseImportScores(text) {
+  const scores = {};
+  const grab = (key, pattern) => {
+    const match = text.match(pattern);
+    if (match) scores[key] = normalizeScore(match[1].trim());
+  };
+  grab("total", /总分[：:]\s*([\d.]+)/);
+  ["tr", "cc", "lr", "gra"].forEach((dim) => {
+    grab(dim, new RegExp(`${dim.toUpperCase()}[：:]?\\s*([\\d.]+)`, "i"));
+  });
+  return scores;
+}
+
+function parseImportEvaluation(text) {
+  const result = [];
+  text.split(/\r?\n/).forEach((line) => {
+    const match = line.match(/^(亮点|短板|提升路径)[：:]\s*(.*)$/);
+    if (match) result.push({ title: match[1], body: match[2].trim() });
+  });
+  return result.length ? result : null;
+}
+
+function parseImportCorrections(text) {
+  const result = [];
+  text.split(/\r?\n/).forEach((line) => {
+    const match = line.match(CORRECTION_LINE_RE);
+    if (!match) return;
+    const kind = CORRECTION_KINDS.some((item) => item.kind === match[1].trim()) ? match[1].trim() : "其他";
+    result.push({ source: match[2].trim(), reason: match[3].trim(), fix: match[4].trim(), comment: match[5].trim(), kind });
+  });
+  return result;
+}
+
+function parseImportBank(text, mode) {
+  const schema = getBankSchema(mode);
+  const labelToKey = {};
+  Object.entries(schema).forEach(([key, label]) => {
+    labelToKey[label] = key;
+    labelToKey[key] = key;
+  });
+  const bank = {};
+  let current = null;
+  text.split(/\r?\n/).forEach((raw) => {
+    const line = raw.trim();
+    if (!line) return;
+    // 分类名作为分组标题（带冒号或单独一行都接受）
+    const headerMatch = line.match(/^(.+?)[：:]\s*$/);
+    if (headerMatch) {
+      const key = labelToKey[headerMatch[1].trim()];
+      if (key) {
+        current = key;
+        bank[current] = [];
+      }
+      return;
+    }
+    if (labelToKey[line]) {
+      current = labelToKey[line];
+      bank[current] = [];
+      return;
+    }
+    if (!current) return;
+    const item = line.replace(/^[-•*]\s*/, "").trim();
+    if (item) bank[current].push(item);
+  });
+  return Object.fromEntries(Object.entries(bank).filter(([, items]) => items.length).map(([key, items]) => [key, items.join("\n")]));
+}
+
+function parseImportThinking(text) {
+  const stanceMatch = text.match(/整体思路[：:]\s*([\s\S]*?)(?=\n*\s*论点与论据[：:]|$)/);
+  const argsMatch = text.match(/论点与论据[：:]\s*([\s\S]*)$/);
+  return {
+    stance: stanceMatch ? stanceMatch[1].trim() : "",
+    arguments: argsMatch ? argsMatch[1].trim() : "",
+  };
+}
+
+function openImportModal() {
+  els.importText.value = "";
+  els.importModal.classList.remove("hidden");
+  els.importText.focus();
+}
+
+function closeImportModal() {
+  els.importModal.classList.add("hidden");
+}
+
+function applyParsedImport() {
+  const entry = currentEntry();
+  if (!entry) return;
+  const raw = els.importText.value.trim();
+  if (!raw) {
+    showToast("请先粘贴批改结果", "error");
+    return;
+  }
+
+  const scores = parseImportScores(importSection(raw, "【分数】"));
+  const evalSections = parseImportEvaluation(importSection(raw, "【评语】"));
+  const corrections = parseImportCorrections(importSection(raw, "【错误】"));
+  const bank = parseImportBank(importSection(raw, "【表达】"), entry.mode);
+  const model = importSection(raw, "【范文】");
+  const thinking = parseImportThinking(importSection(raw, "【思路】"));
+
+  if (scores.total) entry.draftScore = scores.total;
+  SCORE_DIMENSIONS.forEach((dim) => {
+    if (scores[dim.key]) entry.draftScores[dim.key] = scores[dim.key];
+  });
+  if (evalSections && evalSections.length) entry.evaluation = evalSections;
+  if (corrections.length) entry.corrections.push(...corrections);
+  Object.entries(bank).forEach(([key, value]) => {
+    entry.bank[key] = appendLine(entry.bank[key], value);
+  });
+  if (model) entry.modelHtml = textToHtml(model);
+  if (thinking.stance) entry.stance = thinking.stance;
+  if (thinking.arguments) entry.arguments = thinking.arguments;
+
+  persist();
+  renderAll();
+  closeImportModal();
+
+  const parts = [];
+  if (scores.total) parts.push(`分数 ${scores.total}`);
+  if (evalSections && evalSections.length) parts.push(`评语 ${evalSections.length} 段`);
+  if (corrections.length) parts.push(`错误 ${corrections.length} 条`);
+  const bankCount = Object.values(bank).reduce((acc, value) => acc + value.split("\n").length, 0);
+  if (bankCount) parts.push(`表达 ${bankCount} 条`);
+  if (model) parts.push("范文");
+  if (thinking.stance || thinking.arguments) parts.push("思路");
+  showToast(parts.length ? `导入完成：${parts.join(" · ")}` : "未识别到可导入的内容，请确认格式", parts.length ? "ok" : "error");
 }
 
 /* ---------------- 渲染：选项与评分 ---------------- */
@@ -1442,6 +1599,9 @@ function renderMetrics() {
   const task1 = state.entries.filter((entry) => entry.mode === "task1").length;
   const lastDate = getLastPracticeDate();
   const lastAvg = getLastAverageScore();
+  const errCounts = correctionCounts();
+  const errTotal = Object.values(errCounts).reduce((a, b) => a + b, 0);
+  const weighted = weightedOverallScore();
 
   els.metricGrid.innerHTML = `
     <div class="metric-card overview-card">
@@ -1460,12 +1620,45 @@ function renderMetrics() {
       <div class="metric-card-head"><strong>${task1}</strong><span>小作文题型</span></div>
       ${renderDistribution(typeCounts(), TASK_TYPES.task1)}
     </div>
+    <div class="metric-card distribution-card">
+      <div class="metric-card-head"><strong>${errTotal}</strong><span>错误标注 · 按类型（常见错误追踪）</span></div>
+      ${renderDistribution(errCounts, CORRECTION_KINDS.map((c) => c.kind))}
+    </div>
+    <div class="metric-card weighted-card">
+      <strong>${weighted ?? "-"}</strong>
+      <span>${weighted ? "加权写作分（小作文×1/3 + 大作文×2/3）" : "加权写作分 · 需同时有大作文与小作文记录"}</span>
+    </div>
     <div class="metric-card average-card">
       <strong>${lastAvg ?? "-"}</strong>
       <span>${lastAvg ? "最近一次总分" : "还没有分数记录"}</span>
     </div>
   `;
   renderSummary();
+}
+
+/* 所有条目按七类错误标签聚合统计（对应提示词长期跟踪的"重复犯的错误"） */
+function correctionCounts() {
+  return state.entries.reduce((acc, entry) => {
+    (entry.corrections || []).forEach((correction) => {
+      acc[correction.kind] = (acc[correction.kind] || 0) + 1;
+    });
+    return acc;
+  }, {});
+}
+
+/* 加权写作分 = 最近一篇 Task 1 × 1/3 + 最近一篇 Task 2 × 2/3 */
+function weightedOverallScore() {
+  const latestScore = (mode) => {
+    const entry = state.entries
+      .filter((item) => item.mode === mode)
+      .sort((a, b) => getDateTime(b.practiceDate) - getDateTime(a.practiceDate))[0];
+    if (!entry) return null;
+    return entry.modelScore || entry.draftScore || null;
+  };
+  const t1 = latestScore("task1");
+  const t2 = latestScore("task2");
+  if (t1 == null || t2 == null) return null;
+  return (Math.round((Number(t1) / 3 + (Number(t2) * 2) / 3) * 2) / 2).toFixed(1);
 }
 
 function getLastAverageScore() {
@@ -1580,6 +1773,7 @@ function renderEditor() {
   els.meaningText.value = entry.meaning;
   els.essayType.value = entry.essayType;
   els.practiceDate.value = entry.practiceDate;
+  els.entrySource.value = entry.source || "";
   els.topicSelect.value = entry.topic || TASK2_TOPICS[0];
   els.topicField.classList.toggle("hidden", entry.mode !== "task2");
   els.taskImageField.classList.toggle("hidden", entry.mode !== "task1");
@@ -1847,6 +2041,7 @@ function renderCorrections() {
     node.dataset.kind = correction.kind;
     node.classList.add(`kind-${correction.kind}`);
     node.querySelector('[data-correction="source"]').value = correction.source || "";
+    node.querySelector('[data-correction="reason"]').value = correction.reason || "";
     node.querySelector('[data-correction="fix"]').value = correction.fix || "";
     node.querySelector('[data-correction="comment"]').value = correction.comment || "";
     const kindSelect = node.querySelector('[data-correction="kind"]');
@@ -1941,6 +2136,7 @@ function updateCurrentFromInputs() {
   entry.meaning = els.meaningText.value;
   entry.essayType = els.essayType.value;
   entry.practiceDate = els.practiceDate.value;
+  entry.source = els.entrySource.value.trim();
   entry.topic = entry.mode === "task2" ? els.topicSelect.value : "";
   entry.taskImage = entry.mode === "task1" ? entry.taskImage || "" : "";
   entry.draftHtml = cleanEditorHtml(els.draftEditor.innerHTML);
@@ -2073,6 +2269,13 @@ function bindEvents() {
 
   $("#backHomeBtn").addEventListener("click", showHome);
   els.exportEntryBtn.addEventListener("click", exportEntryMarkdown);
+  els.importEntryBtn.addEventListener("click", openImportModal);
+  els.importModalClose.addEventListener("click", closeImportModal);
+  els.importCancelBtn.addEventListener("click", closeImportModal);
+  els.importConfirmBtn.addEventListener("click", applyParsedImport);
+  els.importModal.addEventListener("click", (event) => {
+    if (event.target === els.importModal) closeImportModal();
+  });
   els.openLibraryBtn.addEventListener("click", showLibrary);
   els.libraryHomeBtn.addEventListener("click", showHome);
 
@@ -2154,7 +2357,7 @@ function bindEvents() {
     renderAll();
   });
 
-  [els.entryTitle, els.promptText, els.meaningText, els.essayType, els.practiceDate, els.topicSelect, els.stanceText, els.argumentsText].forEach((input) => {
+  [els.entryTitle, els.promptText, els.meaningText, els.essayType, els.practiceDate, els.entrySource, els.topicSelect, els.stanceText, els.argumentsText].forEach((input) => {
     input.addEventListener("input", () => {
       updateCurrentFromInputs();
       persist();
@@ -2271,6 +2474,7 @@ function bindEvents() {
     if (event.key === "Escape") {
       hideToolbar();
       closeImageModal();
+      closeImportModal();
       closeAllSelects();
       closeThemePopover();
     }
