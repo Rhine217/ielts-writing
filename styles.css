@@ -1504,6 +1504,7 @@ summary strong {
 
 .evaluation-panel {
   margin-bottom: 16px;
+  overflow: hidden;
 }
 
 .evaluation-panel .panel-header {
