@@ -718,12 +718,15 @@ function inferTopic(tags = "") {
 }
 
 function normalizeCorrection(correction) {
+  const reason = correction.reason || "";
+  const comment = correction.comment || "";
+  // 原因与提升说明合并进"批注"一个字段
+  const mergedComment = [reason, comment].filter(Boolean).join(comment && reason ? "\n" : "");
   const kind = CORRECTION_KINDS.some((c) => c.kind === correction.kind) ? correction.kind : "语法";
   return {
     source: correction.source || "",
     fix: correction.fix || "",
-    reason: correction.reason || "",
-    comment: correction.comment || "",
+    comment: mergedComment,
     kind,
   };
 }
@@ -1371,7 +1374,6 @@ function exportEntryMarkdown() {
 /* ---------------- 批改结果一键导入 ---------------- */
 
 const IMPORT_SECTIONS = ["【分数】", "【评语】", "【错误】", "【表达】", "【范文】", "【思路】"];
-const CORRECTION_LINE_RE = /^\[([^\]]+)\]\s*原句[：:]\s*(.*?)\s*｜\s*原因[：:]\s*(.*?)\s*｜\s*修改[：:]\s*(.*?)\s*｜\s*提升[：:]\s*(.*)$/;
 
 /* 取某个标记段落的正文（到下一个标记为止） */
 function importSection(text, marker) {
@@ -1409,13 +1411,26 @@ function parseImportEvaluation(text) {
   return result.length ? result : null;
 }
 
+/* 兼容两种错误行格式：
+ * 新版：[类型] 原句：… ｜ 修改：… ｜ 批注：…
+ * 旧版：[类型] 原句：… ｜ 原因：… ｜ 修改：… ｜ 提升：…
+ * 原因/提升统一合并进"批注"字段 */
 function parseImportCorrections(text) {
   const result = [];
   text.split(/\r?\n/).forEach((line) => {
-    const match = line.match(CORRECTION_LINE_RE);
-    if (!match) return;
-    const kind = CORRECTION_KINDS.some((item) => item.kind === match[1].trim()) ? match[1].trim() : "其他";
-    result.push({ source: match[2].trim(), reason: match[3].trim(), fix: match[4].trim(), comment: match[5].trim(), kind });
+    const typeMatch = line.match(/^\[([^\]]+)\]\s*(.*)$/);
+    if (!typeMatch) return;
+    const kind = CORRECTION_KINDS.some((item) => item.kind === typeMatch[1].trim()) ? typeMatch[1].trim() : "其他";
+    const fields = {};
+    typeMatch[2].split("｜").forEach((segment) => {
+      const match = segment.trim().match(/^(原句|原因|修改|提升|批注)[：:]\s*([\s\S]*)$/);
+      if (match) fields[match[1]] = match[2].trim();
+    });
+    if (!fields["原句"]) return;
+    const reason = fields["原因"] || "";
+    const improvement = fields["提升"] || fields["批注"] || "";
+    const comment = [reason, improvement].filter(Boolean).join(reason && improvement ? "\n" : "");
+    result.push({ source: fields["原句"], fix: fields["修改"] || "", comment, kind });
   });
   return result;
 }
@@ -2041,7 +2056,6 @@ function renderCorrections() {
     node.dataset.kind = correction.kind;
     node.classList.add(`kind-${correction.kind}`);
     node.querySelector('[data-correction="source"]').value = correction.source || "";
-    node.querySelector('[data-correction="reason"]').value = correction.reason || "";
     node.querySelector('[data-correction="fix"]').value = correction.fix || "";
     node.querySelector('[data-correction="comment"]').value = correction.comment || "";
     const kindSelect = node.querySelector('[data-correction="kind"]');
