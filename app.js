@@ -769,8 +769,8 @@ function normalizeEntry(entry) {
     },
     corrections: (entry.corrections || []).map(normalizeCorrection),
     evaluation: normalizeEvaluation(entry),
-    // 思路合并为单字段（旧数据的整体思路/论点与论据自动合并）
-    thinking: [entry.stance, entry.arguments].filter(Boolean).join("\n\n"),
+    // 思路单字段：优先保留已有内容；仅旧数据（无 thinking）时合并整体思路/论点与论据
+    thinking: entry.thinking || [entry.stance, entry.arguments].filter(Boolean).join("\n\n"),
   };
 }
 
