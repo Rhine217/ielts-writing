@@ -257,7 +257,7 @@ const state = {
   fileHandle: null,
   fileName: "",
   pendingFileName: "",
-  autoSave: true,
+  autoSave: false,
   fileLastSaved: "",
   // 绑定文件时记录的磁盘文件最后修改时间，用于写入前冲突检测
   fileLastModified: null,
@@ -837,7 +837,7 @@ function loadPreferences() {
     if (THEMES[prefs.theme]) state.theme = prefs.theme;
     if (prefs.correctionFilter) state.correctionFilter = { ...CORRECTION_FILTER_DEFAULT, ...prefs.correctionFilter };
     state.fileName = prefs.file?.name || "";
-    state.autoSave = prefs.file?.autoSave ?? true;
+    state.autoSave = prefs.file?.autoSave ?? false;
   } catch {
     /* 偏好损坏时忽略，使用默认值 */
   }
@@ -976,7 +976,7 @@ function parseDataText(text) {
   return migrateData(JSON.parse(text));
 }
 
-async function adoptFile(handle, text, autoSave = true, nameOverride = "") {
+async function adoptFile(handle, text, autoSave = false, nameOverride = "") {
   try {
     const { entries, preferences } = parseDataText(text);
     state.entries = entries.map(normalizeEntry);
@@ -1024,7 +1024,7 @@ async function bindDataFile() {
     }
     const file = await handle.getFile();
     const text = await file.text();
-    await adoptFile(handle, text, true);
+    await adoptFile(handle, text, false);
     return;
   }
   // 回退：文件选择器（无法自动写回，只能手动保存）
@@ -1072,13 +1072,13 @@ async function createDataFile() {
     state.fileHandle = fileHandle;
     state.fileLastModified = null;
     state.fileName = fileName;
-    state.autoSave = true;
+    state.autoSave = false;
     state.pendingFileName = "";
     await storeFileHandle(fileHandle);
     const ok = await writeToFile();
     if (ok) {
       renderSyncStatus();
-      showToast(`已在所选目录创建并绑定「${fileName}」，之后的改动会自动保存`);
+      showToast(`已在所选目录创建并绑定「${fileName}」，点「保存到文件」手动同步`);
     }
     return;
   }
@@ -1224,9 +1224,9 @@ function renderSyncStatus() {
     }
   } else {
     els.syncStatus.textContent = state.fileLastSaved
-      ? `已绑定 ${state.fileName} · ${state.fileLastSaved} 保存`
-      : `已绑定 ${state.fileName}`;
-    els.syncBadge.textContent = "已同步";
+      ? `已绑定 ${state.fileName} · 上次同步 ${state.fileLastSaved}`
+      : `已绑定 ${state.fileName} · 点「保存到文件」手动同步`;
+    els.syncBadge.textContent = state.autoSave ? "自动同步" : "手动同步";
     els.syncBadge.className = "sync-badge synced";
   }
   els.autoSaveToggle.checked = state.autoSave;
@@ -2187,33 +2187,13 @@ function bindEvents() {
   });
 
   els.saveFileBtn.addEventListener("click", async () => {
-    if (state.fileHandle) {
-      const ok = await writeToFile();
-      if (ok) showToast(`已保存到「${state.fileName}」`);
+    // 手动同步：把当前数据写入「打开/绑定」选择的那个文件
+    if (!state.fileHandle) {
+      showToast("请先点击「打开/绑定文件」选择要同步的文件", "error");
       return;
     }
-    if (hasFSA) {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: "ielts-writing-review-data.json",
-          types: [{ description: "JSON 数据文件", accept: { "application/json": [".json"] } }],
-        });
-        state.fileHandle = handle;
-        state.fileLastModified = null;
-        state.fileName = handle.name;
-        state.autoSave = true;
-        await storeFileHandle(handle);
-        const ok = await writeToFile();
-        if (ok) {
-          showToast(`已保存到「${state.fileName}」，之后将自动同步`);
-          renderSyncStatus();
-        }
-      } catch (error) {
-        if (error?.name !== "AbortError") showToast(`保存失败：${error.message}`, "error");
-      }
-      return;
-    }
-    downloadDataFile();
+    const ok = await writeToFile();
+    if (ok) showToast(`已手动同步到「${state.fileName}」`);
   });
 
   els.autoSaveToggle.addEventListener("change", () => {
