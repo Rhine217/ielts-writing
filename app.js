@@ -1398,9 +1398,13 @@ function parseImportScores(text) {
     const match = text.match(pattern);
     if (match) scores[key] = normalizeScore(match[1].trim());
   };
-  grab("total", /总分[：:]\s*([\d.]+)/);
+  // 总分：兼容 "总分：6.5" "总分 6.5" "总分：Band 6.5" "总分(6.5分)" 等写法
+  grab("total", /总分[：:（(]?\s*[^\d\n]{0,6}?([\d.]+)/);
+  // 只有"最终写作分"时兜底
+  if (!scores.total) grab("total", /写作分[：:（(]?\s*[^\d\n]{0,6}?([\d.]+)/);
+  // 四维：兼容 "TR：6" "TR 6" "TR（理由）：6" 等写法（关键词后最多隔 16 个非数字字符）
   ["tr", "cc", "lr", "gra"].forEach((dim) => {
-    grab(dim, new RegExp(`${dim.toUpperCase()}[：:]?\\s*([\\d.]+)`, "i"));
+    grab(dim, new RegExp(`\\b${dim.toUpperCase()}[：:（(]?[^\\d\\n]{0,16}?([\\d.]+)`, "i"));
   });
   return scores;
 }
