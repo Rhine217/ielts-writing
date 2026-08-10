@@ -1785,9 +1785,7 @@ summary strong {
   display: grid;
   gap: 10px;
   padding: 14px;
-  height: 511px;
   align-content: start;
-  overflow: hidden;
 }
 
 .analysis-fields .field {
@@ -1795,17 +1793,8 @@ summary strong {
 }
 
 .analysis-fields textarea {
-  height: 305px;
-  min-height: 0;
-  max-height: 305px;
-  resize: none;
-  overflow: auto;
-}
-
-.analysis-fields label:first-child textarea {
-  height: 116px;
-  min-height: 0;
-  max-height: 116px;
+  min-height: 180px;
+  resize: vertical;
 }
 
 /* ---------------- 图片弹窗 ---------------- */

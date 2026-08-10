@@ -313,8 +313,7 @@ const els = {
   draftStats: $("#draftStats"),
   modelStats: $("#modelStats"),
   bankText: $("#bankText"),
-  stanceText: $("#stanceText"),
-  argumentsText: $("#argumentsText"),
+  thinkingText: $("#thinkingText"),
   correctionList: $("#correctionList"),
   correctionFilterBar: $("#correctionFilterBar"),
   correctionTemplate: $("#correctionTemplate"),
@@ -329,8 +328,6 @@ const els = {
   detailBankTabs: $("#detailBankTabs"),
   editBankLabelsBtn: $("#editBankLabelsBtn"),
   bankLabelEditor: $("#bankLabelEditor"),
-  thinkingPrimaryLabel: $("#thinkingPrimaryLabel"),
-  thinkingSecondaryLabel: $("#thinkingSecondaryLabel"),
   summaryDisplay: $("#summaryDisplay"),
   summaryEditor: $("#summaryEditor"),
   editSummaryBtn: $("#editSummaryBtn"),
@@ -764,8 +761,8 @@ function normalizeEntry(entry) {
     },
     corrections: (entry.corrections || []).map(normalizeCorrection),
     evaluation: normalizeEvaluation(entry),
-    stance: entry.stance || "",
-    arguments: entry.arguments || "",
+    // 思路合并为单字段（旧数据的整体思路/论点与论据自动合并）
+    thinking: [entry.stance, entry.arguments].filter(Boolean).join("\n\n"),
   };
 }
 
@@ -902,8 +899,7 @@ function makeEmptyEntry(mode = state.mode) {
       { title: "短板", body: "" },
       { title: "提升路径", body: "" },
     ],
-    stance: "",
-    arguments: "",
+    thinking: "",
   });
 }
 
@@ -1353,13 +1349,9 @@ function exportEntryMarkdown() {
       lines.push("");
     });
   }
-  if (entry.stance) {
-    lines.push("", "## 整体思路");
-    lines.push(entry.stance);
-  }
-  if (entry.arguments) {
-    lines.push("", "## 论点与论据");
-    lines.push(entry.arguments);
+  if (entry.thinking) {
+    lines.push("", "## 思路与结构");
+    lines.push(entry.thinking);
   }
   const markdown = `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
   const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
@@ -1472,13 +1464,15 @@ function parseImportBank(text, mode) {
   return Object.fromEntries(Object.entries(bank).filter(([, items]) => items.length).map(([key, items]) => [key, items.join("\n")]));
 }
 
+/* 思路合并为单字段；兼容旧格式（整体思路/论点与论据 两小节自动合并） */
 function parseImportThinking(text) {
+  if (!text) return { thinking: "" };
   const stanceMatch = text.match(/整体思路[：:]\s*([\s\S]*?)(?=\n*\s*论点与论据[：:]|$)/);
   const argsMatch = text.match(/论点与论据[：:]\s*([\s\S]*)$/);
-  return {
-    stance: stanceMatch ? stanceMatch[1].trim() : "",
-    arguments: argsMatch ? argsMatch[1].trim() : "",
-  };
+  if (stanceMatch || argsMatch) {
+    return { thinking: [stanceMatch?.[1].trim(), argsMatch?.[1].trim()].filter(Boolean).join("\n\n") };
+  }
+  return { thinking: text };
 }
 
 function openImportModal() {
@@ -1517,8 +1511,7 @@ function applyParsedImport() {
     entry.bank[key] = appendLine(entry.bank[key], value);
   });
   if (model) entry.modelHtml = textToHtml(model);
-  if (thinking.stance) entry.stance = thinking.stance;
-  if (thinking.arguments) entry.arguments = thinking.arguments;
+  if (thinking.thinking) entry.thinking = thinking.thinking;
 
   persist();
   renderAll();
@@ -1531,7 +1524,7 @@ function applyParsedImport() {
   const bankCount = Object.values(bank).reduce((acc, value) => acc + value.split("\n").length, 0);
   if (bankCount) parts.push(`表达 ${bankCount} 条`);
   if (model) parts.push("范文");
-  if (thinking.stance || thinking.arguments) parts.push("思路");
+  if (thinking.thinking) parts.push("思路");
   showToast(parts.length ? `导入完成：${parts.join(" · ")}` : "未识别到可导入的内容，请确认格式", parts.length ? "ok" : "error");
 }
 
@@ -1800,8 +1793,7 @@ function renderEditor() {
   entry.modelHtml = cleanEditorHtml(entry.modelHtml);
   els.draftEditor.innerHTML = entry.draftHtml;
   els.modelEditor.innerHTML = entry.modelHtml;
-  els.stanceText.value = entry.stance;
-  els.argumentsText.value = entry.arguments;
+  els.thinkingText.value = entry.thinking || "";
 
   renderScoreStrip(entry);
   updateStats();
@@ -1810,7 +1802,6 @@ function renderEditor() {
   renderBankTabs(entry.mode);
   renderHighlightLegend();
   renderBankSubmenu();
-  renderThinkingLabels(entry.mode);
   autoResizeTextareas();
 }
 
@@ -2122,16 +2113,6 @@ function renderBankSubmenu() {
     .join("");
 }
 
-function renderThinkingLabels(mode) {
-  if (mode === "task1") {
-    els.thinkingPrimaryLabel.textContent = "概括段思路";
-    els.thinkingSecondaryLabel.textContent = "细节段安排";
-    return;
-  }
-  els.thinkingPrimaryLabel.textContent = "整体思路";
-  els.thinkingSecondaryLabel.textContent = "论点与论据";
-}
-
 function renderAll() {
   renderScoreOptions();
   renderTypeOptions();
@@ -2167,8 +2148,7 @@ function updateCurrentFromInputs() {
   });
   entry.bank[state.bankTab] = els.bankText.value;
   readEvaluationFromDOM();
-  entry.stance = els.stanceText.value;
-  entry.arguments = els.argumentsText.value;
+  entry.thinking = els.thinkingText.value;
 }
 
 function updateStats() {
@@ -2374,7 +2354,7 @@ function bindEvents() {
     renderAll();
   });
 
-  [els.entryTitle, els.promptText, els.meaningText, els.essayType, els.practiceDate, els.entrySource, els.topicSelect, els.stanceText, els.argumentsText].forEach((input) => {
+  [els.entryTitle, els.promptText, els.meaningText, els.essayType, els.practiceDate, els.entrySource, els.topicSelect, els.thinkingText].forEach((input) => {
     input.addEventListener("input", () => {
       updateCurrentFromInputs();
       persist();

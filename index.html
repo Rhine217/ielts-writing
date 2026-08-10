@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=8" />
+    <link rel="stylesheet" href="styles.css?v=9" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -322,7 +322,7 @@
             </article>
 
             <article class="panel thinking-panel">
-              <details>
+              <details open>
                 <summary>
                   <span>
                     <em class="eyebrow">Thinking</em>
@@ -331,12 +331,8 @@
                 </summary>
                 <div class="analysis-fields">
                   <label class="field">
-                    <span id="thinkingPrimaryLabel">整体思路</span>
-                    <textarea id="stanceText" rows="3"></textarea>
-                  </label>
-                  <label class="field">
-                    <span id="thinkingSecondaryLabel">论点与论据</span>
-                    <textarea id="argumentsText" rows="7"></textarea>
+                    <span>思路与结构</span>
+                    <textarea id="thinkingText" rows="8" placeholder="整体思路、审题要点、结构蓝图、论证技法、实操建议…"></textarea>
                   </label>
                 </div>
               </details>
@@ -432,6 +428,6 @@
 
     <input type="file" id="fileOpenInput" accept="application/json,.json" class="hidden" aria-hidden="true" tabindex="-1" />
 
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=9"></script>
   </body>
 </html>
