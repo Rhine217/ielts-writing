@@ -1448,27 +1448,37 @@ function parseImportBank(text, mode) {
   const bank = {};
   let current = null;
   text.split(/\r?\n/).forEach((raw) => {
-    const line = raw.trim();
+    let line = raw.trim();
     if (!line) return;
-    // 分类名作为分组标题（带冒号或单独一行都接受）
-    const headerMatch = line.match(/^(.+?)[：:]\s*$/);
-    if (headerMatch) {
-      const key = labelToKey[headerMatch[1].trim()];
+    // 先去掉 markdown 加粗符号，再剥常见前缀（- • 数字序号、① 等）
+    line = line.replace(/\*\*/g, "").replace(/^[-•*]\s*/, "").replace(/^\d+[.、)]\s*/, "").replace(/^[①-⑩]\s*/, "").trim();
+    // 分类标题：支持 "固定搭配：" "固定搭配" "【固定搭配】" 以及 "固定搭配：- 条目" 同行形式
+    const colonMatch = line.match(/^(.+?)[：:]\s*(.*)$/);
+    if (colonMatch) {
+      const header = colonMatch[1].replace(/^【/, "").replace(/】$/, "").trim();
+      const key = labelToKey[header];
       if (key) {
         current = key;
         bank[current] = [];
+        const rest = colonMatch[2].replace(/^[-•*]\s*/, "").trim();
+        if (rest) bank[current].push(rest);
+        return;
       }
-      return;
     }
-    if (labelToKey[line]) {
-      current = labelToKey[line];
+    const bareHeader = line.replace(/^【/, "").replace(/】$/, "").trim();
+    if (labelToKey[bareHeader]) {
+      current = labelToKey[bareHeader];
       bank[current] = [];
       return;
     }
     if (!current) return;
-    const item = line.replace(/^[-•*]\s*/, "").trim();
+    const item = line.trim();
     if (item) bank[current].push(item);
   });
+  // 兜底：完全没识别到分类标题时，整段放进"重点摘记"，避免素材丢失
+  if (!Object.keys(bank).length && text.trim()) {
+    return { keyNotes: text.trim() };
+  }
   return Object.fromEntries(Object.entries(bank).filter(([, items]) => items.length).map(([key, items]) => [key, items.join("\n")]));
 }
 
@@ -1515,9 +1525,12 @@ function applyParsedImport() {
   });
   if (evalSections && evalSections.length) entry.evaluation = evalSections;
   if (corrections.length) entry.corrections.push(...corrections);
-  Object.entries(bank).forEach(([key, value]) => {
-    entry.bank[key] = appendLine(entry.bank[key], value);
+  // 素材追加：纯文本条目转 HTML（<br> 换行），兼容富文本内容
+  const bankKeys = Object.keys(bank);
+  bankKeys.forEach((key) => {
+    entry.bank[key] = appendLine(entry.bank[key], textToHtml(bank[key]));
   });
+  if (bankKeys.length) state.bankTab = bankKeys[0];
   if (model) entry.modelHtml = textToHtml(model);
   if (thinking.thinking) entry.thinking = thinking.thinking;
 
