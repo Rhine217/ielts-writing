@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=10" />
+    <link rel="stylesheet" href="styles.css?v=11" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -101,7 +101,7 @@
               </div>
             </div>
             <div class="summary-display" id="summaryDisplay"></div>
-            <textarea class="summary-editor hidden" id="summaryEditor"></textarea>
+            <div class="rich-field summary-editor hidden" id="summaryEditor" contenteditable="true" spellcheck="false"></div>
           </section>
 
           <div class="workflow-strip">
@@ -163,11 +163,11 @@
             <div class="prompt-left">
               <label class="field">
                 <span>作文原题</span>
-                <textarea id="promptText" rows="3"></textarea>
+                <div class="rich-field" id="promptText" contenteditable="true" spellcheck="false" data-placeholder="作文原题"></div>
               </label>
               <label class="field">
                 <span>题目意思（中文）</span>
-                <textarea id="meaningText" rows="3"></textarea>
+                <div class="rich-field" id="meaningText" contenteditable="true" spellcheck="false" data-placeholder="题目意思（中文）"></div>
               </label>
               <div class="meta-row">
                 <label class="field">
@@ -317,7 +317,7 @@
                 </summary>
                 <div class="bank-label-editor hidden" id="bankLabelEditor"></div>
                 <div class="note-tabs" id="detailBankTabs" role="tablist" aria-label="素材分类"></div>
-                <textarea id="bankText" class="notes-textarea"></textarea>
+                <div class="rich-field notes-textarea" id="bankText" contenteditable="true" spellcheck="false"></div>
               </details>
             </article>
 
@@ -330,7 +330,7 @@
                   </span>
                 </summary>
                 <div class="analysis-fields">
-                  <textarea id="thinkingText" rows="8" placeholder="整体思路、审题要点、结构蓝图、论证技法、实操建议…"></textarea>
+                  <div class="rich-field" id="thinkingText" contenteditable="true" spellcheck="false" data-placeholder="整体思路、审题要点、结构蓝图、论证技法、实操建议…"></div>
                 </div>
               </details>
             </article>
@@ -351,7 +351,11 @@
         <button data-highlight="#b9dcff">蓝色高亮</button>
         <button data-highlight="#c7efd5">绿色高亮</button>
       </div>
-      <div class="toolbar-group submenu-wrap">
+      <div class="toolbar-group">
+        <button data-bold title="加粗">加粗</button>
+        <button data-italic title="斜体">斜体</button>
+      </div>
+      <div class="toolbar-group submenu-wrap" id="toolbarCorrectionGroup">
         <button>加入错误标注 ›</button>
         <div class="submenu">
           <button data-add-correction="source">原句/问题</button>
@@ -359,7 +363,7 @@
           <button data-add-correction="comment">个人批注</button>
         </div>
       </div>
-      <div class="toolbar-group submenu-wrap">
+      <div class="toolbar-group submenu-wrap" id="toolbarBankGroup">
         <button>加入素材沉淀 ›</button>
         <div class="submenu" id="bankSubmenu"></div>
       </div>
@@ -374,15 +378,15 @@
       <article class="correction-item">
         <label>
           <span>原句/问题</span>
-          <textarea data-correction="source" rows="2"></textarea>
+          <div class="rich-field" data-correction="source" contenteditable="true" spellcheck="false"></div>
         </label>
         <label>
           <span>修改建议</span>
-          <textarea data-correction="fix" rows="2"></textarea>
+          <div class="rich-field" data-correction="fix" contenteditable="true" spellcheck="false"></div>
         </label>
         <label>
           <span>批注</span>
-          <textarea data-correction="comment" rows="2"></textarea>
+          <div class="rich-field" data-correction="comment" contenteditable="true" spellcheck="false"></div>
         </label>
         <label>
           <span>问题类型</span>
@@ -398,7 +402,7 @@
           <input class="eval-section-title" value="" placeholder="段落标题" />
           <button class="remove-button eval-remove-btn" data-remove-eval type="button" title="删除此段落">×</button>
         </label>
-        <textarea class="eval-section-body" rows="1" placeholder="写下评语…"></textarea>
+        <div class="eval-section-body rich-field" contenteditable="true" spellcheck="false" data-placeholder="写下评语…"></div>
       </div>
     </template>
 
@@ -425,6 +429,6 @@
 
     <input type="file" id="fileOpenInput" accept="application/json,.json" class="hidden" aria-hidden="true" tabindex="-1" />
 
-    <script src="app.js?v=10"></script>
+    <script src="app.js?v=11"></script>
   </body>
 </html>

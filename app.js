@@ -321,6 +321,8 @@ const els = {
   addEvalSectionBtn: $("#addEvalSectionBtn"),
   evalSectionTemplate: $("#evalSectionTemplate"),
   selectionToolbar: $("#selectionToolbar"),
+  toolbarCorrectionGroup: $("#toolbarCorrectionGroup"),
+  toolbarBankGroup: $("#toolbarBankGroup"),
   highlightToolbar: $("#highlightToolbar"),
   clearHighlightBtn: $("#clearHighlightBtn"),
   highlightLegend: $("#highlightLegend"),
@@ -386,6 +388,12 @@ function appendLine(existing, line) {
 
 function textToHtml(text) {
   return escapeHtml(text).replace(/\n/g, "<br>");
+}
+
+/* 普通文本 → 富文本 HTML；已是 HTML 的内容原样使用（兼容旧纯文本数据） */
+function toRichHtml(value) {
+  const text = String(value || "");
+  return /<[a-zA-Z]/.test(text) ? text : textToHtml(text);
 }
 
 function getDateTime(date) {
@@ -1290,11 +1298,11 @@ function exportEntryMarkdown() {
   lines.push(`- 类型：${entry.mode === "task2" ? "大作文" : "小作文"} · ${entry.essayType}${entry.topic ? ` · ${entry.topic}` : ""} · ${entry.practiceDate || "未记录日期"}${sourcePart}`);
   if (entry.prompt) {
     lines.push("", "## 题目");
-    lines.push(entry.prompt);
+    lines.push(htmlToText(entry.prompt));
   }
   if (entry.meaning) {
     lines.push("", "## 题目意思（中文）");
-    lines.push(entry.meaning);
+    lines.push(htmlToText(entry.meaning));
   }
   const draft = htmlToText(entry.draftHtml);
   const model = htmlToText(entry.modelHtml);
@@ -1327,16 +1335,16 @@ function exportEntryMarkdown() {
     lines.push("", "## 评语");
     entry.evaluation.forEach((section) => {
       lines.push(`### ${section.title || "段落"}`);
-      lines.push(section.body || "");
+      lines.push(htmlToText(section.body) || "");
       lines.push("");
     });
   }
   if (entry.corrections?.length) {
     lines.push("", "## 错误标注");
     entry.corrections.forEach((correction, index) => {
-      lines.push(`**${index + 1}. [${correction.kind}] ${correction.source}**`);
-      if (correction.fix) lines.push(`- 修改：${correction.fix}`);
-      if (correction.comment) lines.push(`- 批注：${correction.comment}`);
+      lines.push(`**${index + 1}. [${correction.kind}] ${htmlToText(correction.source)}**`);
+      if (correction.fix) lines.push(`- 修改：${htmlToText(correction.fix)}`);
+      if (correction.comment) lines.push(`- 批注：${htmlToText(correction.comment)}`);
     });
   }
   const bankEntries = Object.entries(entry.bank || {}).filter(([, value]) => value && value.trim());
@@ -1345,13 +1353,13 @@ function exportEntryMarkdown() {
     const schema = getBankSchema(entry.mode);
     bankEntries.forEach(([key, value]) => {
       lines.push(`### ${schema[key] || key}`);
-      lines.push(value);
+      lines.push(htmlToText(value));
       lines.push("");
     });
   }
   if (entry.thinking) {
     lines.push("", "## 思路与结构");
-    lines.push(entry.thinking);
+    lines.push(htmlToText(entry.thinking));
   }
   const markdown = `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
   const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
@@ -1720,8 +1728,8 @@ function daysSince(dateString) {
 }
 
 function renderSummary() {
-  els.summaryDisplay.textContent = state.examSummary || "还没有写总结。";
-  els.summaryEditor.value = state.examSummary;
+  els.summaryDisplay.innerHTML = toRichHtml(state.examSummary || "还没有写总结。");
+  els.summaryEditor.innerHTML = toRichHtml(state.examSummary);
   els.summaryDisplay.classList.toggle("hidden", state.editingSummary);
   els.summaryEditor.classList.toggle("hidden", !state.editingSummary);
   els.editSummaryBtn.classList.toggle("hidden", state.editingSummary);
@@ -1737,7 +1745,7 @@ function renderEntryList() {
     const topicMatch = state.mode !== "task2" || topicFilter === "all" || entry.topic === topicFilter;
     if (!typeMatch || !topicMatch) return false;
     if (!query) return true;
-    const haystack = [entry.title, entry.topic, entry.essayType, entry.prompt, entry.meaning].join(" ").toLowerCase();
+    const haystack = [entry.title, entry.topic, entry.essayType, htmlToText(entry.prompt), htmlToText(entry.meaning)].join(" ").toLowerCase();
     return haystack.includes(query);
   });
 
@@ -1780,8 +1788,8 @@ function renderEditor() {
   els.promptCard.classList.toggle("task1-layout", entry.mode === "task1");
   els.promptCard.classList.toggle("task2-layout", entry.mode === "task2");
   els.entryTitle.value = entry.title;
-  els.promptText.value = entry.prompt;
-  els.meaningText.value = entry.meaning;
+  els.promptText.innerHTML = toRichHtml(entry.prompt);
+  els.meaningText.innerHTML = toRichHtml(entry.meaning);
   els.essayType.value = entry.essayType;
   els.practiceDate.value = entry.practiceDate;
   els.entrySource.value = entry.source || "";
@@ -1793,7 +1801,7 @@ function renderEditor() {
   entry.modelHtml = cleanEditorHtml(entry.modelHtml);
   els.draftEditor.innerHTML = entry.draftHtml;
   els.modelEditor.innerHTML = entry.modelHtml;
-  els.thinkingText.value = entry.thinking || "";
+  els.thinkingText.innerHTML = toRichHtml(entry.thinking);
 
   renderScoreStrip(entry);
   updateStats();
@@ -1884,7 +1892,7 @@ function renderLibraryContent() {
             </div>
             <span class="library-date">${escapeHtml(card.date)}</span>
           </div>
-          <pre>${escapeHtml(card.content)}</pre>
+          <pre>${escapeHtml(htmlToText(card.content))}</pre>
         </article>
       `,
     )
@@ -1936,7 +1944,7 @@ function renderBankTabs(mode) {
     )
     .join("");
   els.detailBankTabs.innerHTML = tabs;
-  els.bankText.value = currentEntry()?.bank[state.bankTab] || "";
+  els.bankText.innerHTML = toRichHtml(currentEntry()?.bank[state.bankTab] || "");
   renderBankLabelEditor(mode);
 }
 
@@ -1949,7 +1957,7 @@ function renderEvaluation(entry) {
     const node = els.evalSectionTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.index = index;
     node.querySelector(".eval-section-title").value = section.title || "";
-    node.querySelector(".eval-section-body").value = section.body || "";
+    node.querySelector(".eval-section-body").innerHTML = toRichHtml(section.body || "");
     els.evaluationList.appendChild(node);
     // 评语正文：默认一行，随内容自动增高
     scheduleGrow(node.querySelector(".eval-section-body"), 40);
@@ -1971,7 +1979,7 @@ function readEvaluationFromDOM() {
   const sections = [];
   els.evaluationList.querySelectorAll(".eval-section").forEach((node) => {
     const title = node.querySelector(".eval-section-title").value.trim();
-    const body = node.querySelector(".eval-section-body").value;
+    const body = cleanEditorHtml(node.querySelector(".eval-section-body").innerHTML);
     sections.push({ title, body });
   });
   entry.evaluation = sections;
@@ -1993,7 +2001,7 @@ function scheduleGrow(textarea, minHeight = 46) {
 }
 
 function regrowCorrectionTextareas() {
-  els.correctionList.querySelectorAll("textarea").forEach(autoGrowTextarea);
+  els.correctionList.querySelectorAll(".rich-field").forEach(autoGrowTextarea);
 }
 
 function kindColor(kind) {
@@ -2049,17 +2057,17 @@ function renderCorrections() {
     node.dataset.index = index;
     node.dataset.kind = correction.kind;
     node.classList.add(`kind-${correction.kind}`);
-    node.querySelector('[data-correction="source"]').value = correction.source || "";
-    node.querySelector('[data-correction="fix"]').value = correction.fix || "";
-    node.querySelector('[data-correction="comment"]').value = correction.comment || "";
+    node.querySelector('[data-correction="source"]').innerHTML = toRichHtml(correction.source || "");
+    node.querySelector('[data-correction="fix"]').innerHTML = toRichHtml(correction.fix || "");
+    node.querySelector('[data-correction="comment"]').innerHTML = toRichHtml(correction.comment || "");
     const kindSelect = node.querySelector('[data-correction="kind"]');
     kindSelect.innerHTML = CORRECTION_KINDS.map((item) => `<option value="${item.kind}">${item.kind}</option>`).join("");
     kindSelect.value = correction.kind;
     // 先挂载到 DOM，再测量内容高度，否则 scrollHeight 为 0
     els.correctionList.appendChild(node);
-    node.querySelectorAll("textarea").forEach((textarea) => {
-      textarea.addEventListener("input", () => scheduleGrow(textarea));
-      scheduleGrow(textarea);
+    node.querySelectorAll(".rich-field").forEach((field) => {
+      field.addEventListener("input", () => scheduleGrow(field));
+      scheduleGrow(field);
     });
     enhanceSelect(kindSelect);
   });
@@ -2130,8 +2138,8 @@ function updateCurrentFromInputs() {
   if (!entry) return;
 
   entry.title = els.entryTitle.value;
-  entry.prompt = els.promptText.value;
-  entry.meaning = els.meaningText.value;
+  entry.prompt = cleanEditorHtml(els.promptText.innerHTML);
+  entry.meaning = cleanEditorHtml(els.meaningText.innerHTML);
   entry.essayType = els.essayType.value;
   entry.practiceDate = els.practiceDate.value;
   entry.source = els.entrySource.value.trim();
@@ -2146,9 +2154,9 @@ function updateCurrentFromInputs() {
     entry.draftScores[dim.key] = els[`draftScore${key}`].value;
     entry.modelScores[dim.key] = els[`modelScore${key}`].value;
   });
-  entry.bank[state.bankTab] = els.bankText.value;
+  entry.bank[state.bankTab] = cleanEditorHtml(els.bankText.innerHTML);
   readEvaluationFromDOM();
-  entry.thinking = els.thinkingText.value;
+  entry.thinking = cleanEditorHtml(els.thinkingText.innerHTML);
 }
 
 function updateStats() {
@@ -2313,7 +2321,7 @@ function bindEvents() {
   });
 
   els.saveSummaryBtn.addEventListener("click", () => {
-    state.examSummary = els.summaryEditor.value;
+    state.examSummary = cleanEditorHtml(els.summaryEditor.innerHTML);
     state.editingSummary = false;
     persist();
     renderSummary();
@@ -2433,7 +2441,6 @@ function bindEvents() {
 
   // —— 富文本编辑器 ——
   [els.draftEditor, els.modelEditor].forEach((editor) => {
-    editor.addEventListener("paste", (event) => handleEditorPaste(event, editor));
     editor.addEventListener("input", () => {
       updateCurrentFromInputs();
       updateStats();
@@ -2441,18 +2448,35 @@ function bindEvents() {
     });
     editor.addEventListener("mouseup", () => showToolbarForSelection(editor));
     editor.addEventListener("keyup", () => showToolbarForSelection(editor));
-    // 点击已高亮的文字 → 弹出清除高亮浮层
-    editor.addEventListener("click", (event) => {
-      const span = event.target.closest?.("[data-highlight]");
-      if (span) showHighlightToolbar(span);
-      else hideHighlightToolbar();
-    });
+  });
+
+  // 所有富文本框统一处理：粘贴纯文本、点击高亮弹出清除浮层
+  document.addEventListener("paste", (event) => {
+    const field = event.target.closest?.(".rich-field, .rich-editor");
+    if (!field) return;
+    event.preventDefault();
+    const text = event.clipboardData?.getData("text/plain") || "";
+    if (!text) return;
+    insertPlainText(field, text);
+    if (field.classList.contains("rich-editor")) updateStats();
+    updateCurrentFromInputs();
+    persist();
+  });
+
+  document.addEventListener("click", (event) => {
+    if (event.target.closest("#highlightToolbar")) return;
+    const span = event.target.closest?.("[data-highlight]");
+    if (span && span.closest(".rich-field, .rich-editor")) {
+      showHighlightToolbar(span);
+    } else {
+      hideHighlightToolbar();
+    }
   });
 
   document.addEventListener("selectionchange", () => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) return;
-    const editor = selection.anchorNode?.parentElement?.closest?.(".rich-editor");
+    const editor = selection.anchorNode?.parentElement?.closest?.(".rich-field, .rich-editor");
     if (editor) showToolbarForSelection(editor);
   });
 
@@ -2463,7 +2487,7 @@ function bindEvents() {
     if (!event.target.closest(".theme-popover, #themeToggleBtn")) {
       closeThemePopover();
     }
-    if (event.target.closest(".rich-editor")) {
+    if (event.target.closest(".rich-field, .rich-editor")) {
       window.setTimeout(() => {
         const selection = window.getSelection();
         if (!selection || selection.isCollapsed) hideToolbar();
@@ -2501,6 +2525,8 @@ function bindEvents() {
     const button = event.target.closest("button");
     if (!button) return;
     if (button.dataset.highlight) applyHighlight(button.dataset.highlight);
+    if (button.dataset.bold !== undefined) applyInlineFormat("bold");
+    if (button.dataset.italic !== undefined) applyInlineFormat("italic");
     if (button.dataset.addCorrection) addSelectionToCorrection(button.dataset.addCorrection);
     if (button.dataset.addBank) addSelectionToBank(button.dataset.addBank);
   });
@@ -2598,7 +2624,7 @@ function bindEvents() {
     if (!item || !key) return;
     const correction = currentEntry().corrections[Number(item.dataset.index)];
     if (!correction) return;
-    correction[key] = event.target.value;
+    correction[key] = cleanEditorHtml(event.target.innerHTML);
     persist();
   });
 
@@ -2674,16 +2700,6 @@ function compressImage(file, maxWidth = 1600, quality = 0.82) {
   });
 }
 
-function handleEditorPaste(event, editor) {
-  event.preventDefault();
-  const text = event.clipboardData?.getData("text/plain") || "";
-  if (!text) return;
-  insertPlainText(editor, text);
-  updateCurrentFromInputs();
-  updateStats();
-  persist();
-}
-
 function insertPlainText(editor, text) {
   const selection = window.getSelection();
   if (!selection || !selection.rangeCount) {
@@ -2717,18 +2733,33 @@ function showToolbarForSelection(editor) {
   state.selectedEditor = editor;
   state.selectedText = text;
   hideHighlightToolbar();
+  // 仅作文编辑器显示"加入错误标注/素材沉淀"，其他输入框只保留高亮与加粗斜体
+  const isEssay = editor.classList.contains("rich-editor");
+  els.toolbarCorrectionGroup.classList.toggle("hidden", !isEssay);
+  els.toolbarBankGroup.classList.toggle("hidden", !isEssay);
+  els.selectionToolbar.classList.remove("hidden");
   const rect = selection.getRangeAt(0).getBoundingClientRect();
-  const toolbarWidth = 156;
+  const toolbarWidth = els.selectionToolbar.offsetWidth || 180;
   const left = Math.min(window.innerWidth - toolbarWidth - 10, rect.right + 12);
   const top = Math.min(window.innerHeight - 240, Math.max(10, rect.bottom + 8));
   els.selectionToolbar.style.left = `${Math.max(8, left)}px`;
   els.selectionToolbar.style.top = `${Math.max(8, top)}px`;
-  els.selectionToolbar.classList.remove("hidden");
 }
 
 function hideToolbar() {
   els.selectionToolbar.classList.add("hidden");
   state.selectedText = "";
+}
+
+/* 加粗/斜体：execCommand 走原生撤销栈，作用于当前选区 */
+function applyInlineFormat(command) {
+  if (!state.selectedEditor) return;
+  const ok = document.execCommand(command, false, null);
+  if (ok) {
+    updateCurrentFromInputs();
+    persist();
+  }
+  hideToolbar();
 }
 
 function applyHighlight(color) {
@@ -2812,7 +2843,7 @@ function addSelectionToCorrection(field) {
 function addSelectionToBank(target) {
   const entry = currentEntry();
   if (!entry || !state.selectedText) return;
-  entry.bank[target] = appendLine(entry.bank[target], state.selectedText);
+  entry.bank[target] = appendLine(entry.bank[target], textToHtml(state.selectedText));
   state.bankTab = target;
   persist();
   renderAll();
@@ -2870,6 +2901,8 @@ function init() {
   applyTheme(state.theme);
   bindEvents();
   renderThemeSwatches();
+  // 加粗/斜体用 <b>/<i> 标签而非内联样式，便于清洗与存储
+  document.execCommand("styleWithCSS", false, false);
 
   // 页面关闭/隐藏前把防抖中的写入立即落盘，避免丢最后几秒的输入
   window.addEventListener("beforeunload", () => {

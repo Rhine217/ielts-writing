@@ -365,6 +365,38 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
 }
 
+/* ---------------- 富文本框（可高亮/加粗/斜体） ---------------- */
+
+.rich-field {
+  min-height: 86px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  outline: none;
+  overflow-y: auto;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.rich-field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.rich-field:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.rich-field [data-highlight] {
+  border-radius: 2px;
+}
+
 /* ---------------- 自定义下拉框 ---------------- */
 
 .dd {
@@ -1759,15 +1791,13 @@ summary strong {
   place-items: center;
 }
 
-.correction-item textarea {
+.correction-item .rich-field {
   min-height: 46px;
   padding: 9px 11px;
   resize: none;
   overflow-y: hidden;
   line-height: 1.55;
   height: auto;
-  /* Chromium/Edge 原生按内容自动定高，最可靠 */
-  field-sizing: content;
 }
 
 .notes-textarea {
@@ -1789,7 +1819,7 @@ summary strong {
 }
 
 /* 与素材沉淀的 notes-textarea 同高，面板拉伸后底部边框对齐 */
-.analysis-fields textarea {
+.analysis-fields .rich-field {
   height: 405px;
   min-height: 405px;
   max-height: 405px;
