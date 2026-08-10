@@ -304,6 +304,10 @@ const els = {
   draftScoreCC: $("#draftScoreCC"),
   draftScoreLR: $("#draftScoreLR"),
   draftScoreGRA: $("#draftScoreGRA"),
+  draftReasonTR: $("#draftReasonTR"),
+  draftReasonCC: $("#draftReasonCC"),
+  draftReasonLR: $("#draftReasonLR"),
+  draftReasonGRA: $("#draftReasonGRA"),
   modelScoreTR: $("#modelScoreTR"),
   modelScoreCC: $("#modelScoreCC"),
   modelScoreLR: $("#modelScoreLR"),
@@ -686,8 +690,16 @@ function syncAllSelects() {
  * ============================================================ */
 
 function normalizeScore(score) {
-  const value = String(score ?? "");
-  return SCORE_OPTIONS.includes(value) ? value : "";
+  const value = String(score ?? "").trim();
+  if (SCORE_OPTIONS.includes(value)) return value;
+  // 兼容 "6.0" "6.00" 等写法：转成最接近的 0.5 分档
+  const num = Number(value);
+  if (!Number.isNaN(num) && num >= 4 && num <= 9) {
+    const rounded = Math.round(num * 2) / 2;
+    if (SCORE_OPTIONS.includes(rounded.toFixed(1))) return rounded.toFixed(1);
+    if (SCORE_OPTIONS.includes(String(rounded))) return String(rounded);
+  }
+  return "";
 }
 
 function normalizeDimScores(scores = {}) {
@@ -696,6 +708,15 @@ function normalizeDimScores(scores = {}) {
     cc: normalizeScore(scores.cc),
     lr: normalizeScore(scores.lr),
     gra: normalizeScore(scores.gra),
+  };
+}
+
+function normalizeDimReasons(reasons = {}) {
+  return {
+    tr: String(reasons.tr || ""),
+    cc: String(reasons.cc || ""),
+    lr: String(reasons.lr || ""),
+    gra: String(reasons.gra || ""),
   };
 }
 
@@ -756,6 +777,7 @@ function normalizeEntry(entry) {
     modelScore: normalizeScore(entry.modelScore),
     draftScores: normalizeDimScores(entry.draftScores),
     modelScores: normalizeDimScores(entry.modelScores),
+    draftReasons: normalizeDimReasons(entry.draftReasons),
     bank: {
       collocations: "",
       synonyms: "",
@@ -900,6 +922,7 @@ function makeEmptyEntry(mode = state.mode) {
     modelScore: "",
     draftScores: {},
     modelScores: {},
+    draftReasons: {},
     bank: {},
     corrections: [],
     evaluation: [
@@ -1331,6 +1354,13 @@ function exportEntryMarkdown() {
     if (draftScoreLine) lines.push(draftScoreLine);
     if (modelScoreLine) lines.push(modelScoreLine);
   }
+  const reasonLines = ["tr", "cc", "lr", "gra"]
+    .map((key) => (entry.draftReasons?.[key] ? `- ${key.toUpperCase()} 依据：${htmlToText(entry.draftReasons[key])}` : ""))
+    .filter(Boolean);
+  if (reasonLines.length) {
+    lines.push("", "### 打分依据");
+    lines.push(...reasonLines);
+  }
   if (entry.evaluation?.length) {
     lines.push("", "## 评语");
     entry.evaluation.forEach((section) => {
@@ -1406,6 +1436,17 @@ function parseImportScores(text) {
   ["tr", "cc", "lr", "gra"].forEach((dim) => {
     grab(dim, new RegExp(`\\b${dim.toUpperCase()}[：:（(]?[^\\d\\n]{0,16}?([\\d.]+)`, "i"));
   });
+  // 打分依据：从"打分依据："标题后按 TR/CC/LR/GRA 标签提取（直到下一个标签行或结尾）
+  const reasons = {};
+  const reasonHeader = text.match(/打分依据[：:]\s*([\s\S]*)$/);
+  if (reasonHeader) {
+    ["tr", "cc", "lr", "gra"].forEach((dim) => {
+      const label = dim.toUpperCase();
+      const match = reasonHeader[1].match(new RegExp(`${label}[：:]\\s*([\\s\\S]*?)(?=\\n\\s*(?:TR|CC|LR|GRA)[：:]|$)`, "i"));
+      if (match) reasons[dim] = match[1].trim();
+    });
+  }
+  scores.reasons = reasons;
   return scores;
 }
 
@@ -1527,6 +1568,11 @@ function applyParsedImport() {
   SCORE_DIMENSIONS.forEach((dim) => {
     if (scores[dim.key]) entry.draftScores[dim.key] = scores[dim.key];
   });
+  if (scores.reasons) {
+    SCORE_DIMENSIONS.forEach((dim) => {
+      if (scores.reasons[dim.key]) entry.draftReasons[dim.key] = scores.reasons[dim.key];
+    });
+  }
   if (evalSections && evalSections.length) entry.evaluation = evalSections;
   if (corrections.length) entry.corrections.push(...corrections);
   // 素材追加：纯文本条目转 HTML（<br> 换行），兼容富文本内容
@@ -1544,6 +1590,8 @@ function applyParsedImport() {
 
   const parts = [];
   if (scores.total) parts.push(`分数 ${scores.total}`);
+  const reasonCount = Object.values(scores.reasons || {}).filter(Boolean).length;
+  if (reasonCount) parts.push(`依据 ${reasonCount} 条`);
   if (evalSections && evalSections.length) parts.push(`评语 ${evalSections.length} 段`);
   if (corrections.length) parts.push(`错误 ${corrections.length} 条`);
   const bankCount = Object.values(bank).reduce((acc, value) => acc + value.split("\n").length, 0);
@@ -1625,6 +1673,7 @@ function renderScoreStrip(entry) {
     const key = dim.key.toUpperCase();
     els[`draftScore${key}`].value = entry.draftScores?.[dim.key] || "";
     els[`modelScore${key}`].value = entry.modelScores?.[dim.key] || "";
+    els[`draftReason${key}`].value = entry.draftReasons?.[dim.key] || "";
   });
   updateScoreAvgs(entry);
 }
@@ -2170,6 +2219,7 @@ function updateCurrentFromInputs() {
     const key = dim.key.toUpperCase();
     entry.draftScores[dim.key] = els[`draftScore${key}`].value;
     entry.modelScores[dim.key] = els[`modelScore${key}`].value;
+    entry.draftReasons[dim.key] = els[`draftReason${key}`].value.trim();
   });
   entry.bank[state.bankTab] = cleanEditorHtml(els.bankText.innerHTML);
   readEvaluationFromDOM();
@@ -2359,7 +2409,7 @@ function bindEvents() {
     renderAll();
   });
 
-  [els.entryTitle, els.promptText, els.meaningText, els.essayType, els.practiceDate, els.entrySource, els.topicSelect, els.thinkingText].forEach((input) => {
+  [els.entryTitle, els.promptText, els.meaningText, els.essayType, els.practiceDate, els.entrySource, els.topicSelect, els.thinkingText, els.draftReasonTR, els.draftReasonCC, els.draftReasonLR, els.draftReasonGRA].forEach((input) => {
     input.addEventListener("input", () => {
       updateCurrentFromInputs();
       persist();

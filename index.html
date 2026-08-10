@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=11" />
+    <link rel="stylesheet" href="styles.css?v=16" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -223,18 +223,22 @@
                 <label class="dim-field" title="Task Response · 任务完成度：是否完整回应题目的每项要求">
                   <span class="dim-label">TR</span>
                   <select id="draftScoreTR"></select>
+                  <textarea class="dim-reason" id="draftReasonTR" rows="2" placeholder="打分依据"></textarea>
                 </label>
                 <label class="dim-field" title="Coherence &amp; Cohesion · 连贯与衔接：段落组织与连接手段">
                   <span class="dim-label">CC</span>
                   <select id="draftScoreCC"></select>
+                  <textarea class="dim-reason" id="draftReasonCC" rows="2" placeholder="打分依据"></textarea>
                 </label>
                 <label class="dim-field" title="Lexical Resource · 词汇资源：用词广度与准确性">
                   <span class="dim-label">LR</span>
                   <select id="draftScoreLR"></select>
+                  <textarea class="dim-reason" id="draftReasonLR" rows="2" placeholder="打分依据"></textarea>
                 </label>
                 <label class="dim-field" title="Grammatical Range &amp; Accuracy · 语法广度与准确性">
                   <span class="dim-label">GRA</span>
                   <select id="draftScoreGRA"></select>
+                  <textarea class="dim-reason" id="draftReasonGRA" rows="2" placeholder="打分依据"></textarea>
                 </label>
               </div>
               <div id="draftEditor" class="rich-editor" contenteditable="true" spellcheck="false"></div>
@@ -429,6 +433,6 @@
 
     <input type="file" id="fileOpenInput" accept="application/json,.json" class="hidden" aria-hidden="true" tabindex="-1" />
 
-    <script src="app.js?v=15"></script>
+    <script src="app.js?v=16"></script>
   </body>
 </html>
