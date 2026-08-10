@@ -1507,7 +1507,7 @@ summary strong {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .analysis-grid > .panel details:not([open]) > summary {
@@ -1788,13 +1788,13 @@ summary strong {
   align-content: start;
 }
 
-.analysis-fields .field {
-  gap: 5px;
-}
-
+/* 与素材沉淀的 notes-textarea 同高，面板拉伸后底部边框对齐 */
 .analysis-fields textarea {
-  min-height: 180px;
-  resize: vertical;
+  height: 405px;
+  min-height: 405px;
+  max-height: 405px;
+  resize: none;
+  overflow: auto;
 }
 
 /* ---------------- 图片弹窗 ---------------- */
