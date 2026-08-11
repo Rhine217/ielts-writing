@@ -252,6 +252,7 @@ const state = {
   examSummary: SUMMARY_DEFAULT,
   editingSummary: false,
   theme: "ocean",
+  fontScale: 1,
   correctionFilter: { ...CORRECTION_FILTER_DEFAULT },
   // —— 文件同步 ——
   fileHandle: null,
@@ -373,6 +374,9 @@ const els = {
   themeSwatches: $("#themeSwatches"),
   themeToggleBtn: $("#themeToggleBtn"),
   themePopover: $("#themePopover"),
+  fontSizeBtn: $("#fontSizeBtn"),
+  fontPopover: $("#fontPopover"),
+  fontSizeOptions: $("#fontSizeOptions"),
   fileOpenInput: $("#fileOpenInput"),
 };
 
@@ -445,6 +449,48 @@ function showToast(message, type = "ok") {
     toast.classList.remove("show");
     setTimeout(() => toast.remove(), 260);
   }, 2600);
+}
+
+/* ---------------- 字号调整 ---------------- */
+
+const FONT_SCALES = [
+  { label: "小", value: 0.9 },
+  { label: "标准", value: 1 },
+  { label: "大", value: 1.1 },
+  { label: "特大", value: 1.25 },
+];
+
+function applyFontScale(scale) {
+  document.body.style.zoom = String(scale);
+}
+
+function renderFontSizeOptions() {
+  els.fontSizeOptions.innerHTML = FONT_SCALES.map(
+    (opt) =>
+      `<button type="button" class="font-size-option ${state.fontScale === opt.value ? "active" : ""}" data-font-scale="${opt.value}">${opt.label}</button>`,
+  ).join("");
+}
+
+function openFontPopover() {
+  const btn = els.fontSizeBtn.getBoundingClientRect();
+  const pop = els.fontPopover;
+  pop.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    const left = Math.max(8, Math.min(btn.left, window.innerWidth - pop.offsetWidth - 8));
+    const top = btn.bottom + 6;
+    pop.style.left = `${left}px`;
+    if (top + pop.offsetHeight > window.innerHeight - 8) {
+      pop.style.top = `${Math.max(8, btn.top - pop.offsetHeight - 6)}px`;
+      pop.classList.add("flip");
+    } else {
+      pop.style.top = `${top}px`;
+      pop.classList.remove("flip");
+    }
+  });
+}
+
+function closeFontPopover() {
+  els.fontPopover.classList.add("hidden");
 }
 
 /* ---------------- 主题 ---------------- */
@@ -829,6 +875,7 @@ function buildPreferences() {
     bankLabels: clone(state.bankLabels),
     examSummary: state.examSummary,
     theme: state.theme,
+    fontScale: state.fontScale,
     correctionFilter: { ...state.correctionFilter },
     file: { name: state.fileName, autoSave: state.autoSave },
   };
@@ -869,6 +916,7 @@ function loadPreferences() {
     state.bankLabels = mergeBankLabels(prefs.bankLabels);
     state.examSummary = prefs.examSummary || state.examSummary;
     if (THEMES[prefs.theme]) state.theme = prefs.theme;
+    if (typeof prefs.fontScale === "number" && prefs.fontScale >= 0.8 && prefs.fontScale <= 1.5) state.fontScale = prefs.fontScale;
     if (prefs.correctionFilter) state.correctionFilter = { ...CORRECTION_FILTER_DEFAULT, ...prefs.correctionFilter };
     state.fileName = prefs.file?.name || "";
     state.autoSave = prefs.file?.autoSave ?? false;
@@ -1323,6 +1371,11 @@ function htmlToText(html) {
   return div.textContent || "";
 }
 
+/* 去掉音调符号（é→e），用于打字练习的宽容比对 */
+function accentFree(ch) {
+  return ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 function exportEntryMarkdown() {
   const entry = currentEntry();
   if (!entry) return;
@@ -1578,6 +1631,7 @@ function openTypingModal() {
     .join("");
   const current = currentEntry();
   els.typingEntrySelect.value = current && entries.some((entry) => entry.id === current.id) ? current.id : entries[0].id;
+  els.typingEntrySelect.__dd?.sync();
   loadTypingEssay();
   els.typingModal.classList.remove("hidden");
   els.typingInput.focus();
@@ -1612,7 +1666,8 @@ function renderTyping() {
   for (let i = 0; i < total; i++) {
     let cls = "";
     if (i < typedLen) {
-      if (typed[i] === target[i]) {
+      // 音调符号宽容：café 的 é 用 e 打出也算对
+      if (accentFree(typed[i]) === accentFree(target[i])) {
         cls = "ch-done";
         correct++;
       } else {
@@ -2398,6 +2453,27 @@ function bindEvents() {
     closeThemePopover();
   });
 
+  // —— 字号调整 ——
+  els.fontSizeBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (els.fontPopover.classList.contains("hidden")) {
+      closeThemePopover();
+      openFontPopover();
+    } else {
+      closeFontPopover();
+    }
+  });
+
+  els.fontSizeOptions.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-font-scale]");
+    if (!button) return;
+    state.fontScale = Number(button.dataset.fontScale);
+    applyFontScale(state.fontScale);
+    renderFontSizeOptions();
+    persist();
+    closeFontPopover();
+  });
+
   function openThemePopover() {
     const btn = els.themeToggleBtn.getBoundingClientRect();
     const pop = els.themePopover;
@@ -2669,8 +2745,9 @@ function bindEvents() {
     if (event.target.closest(".selection-toolbar")) return;
     if (event.target.closest(".highlight-toolbar")) return;
     if (event.target.closest(".dd, .dd-panel")) return;
-    if (!event.target.closest(".theme-popover, #themeToggleBtn")) {
+    if (!event.target.closest(".theme-popover, #themeToggleBtn, #fontPopover, #fontSizeBtn")) {
       closeThemePopover();
+      closeFontPopover();
     }
     if (event.target.closest(".rich-field, .rich-editor")) {
       window.setTimeout(() => {
@@ -2693,6 +2770,7 @@ function bindEvents() {
       closeTypingModal();
       closeAllSelects();
       closeThemePopover();
+      closeFontPopover();
     }
   });
 
@@ -3095,8 +3173,10 @@ function autoResizeTextareas() {
 function init() {
   loadPreferences();
   applyTheme(state.theme);
+  applyFontScale(state.fontScale);
   bindEvents();
   renderThemeSwatches();
+  renderFontSizeOptions();
   // 加粗/斜体用 <b>/<i> 标签而非内联样式，便于清洗与存储
   document.execCommand("styleWithCSS", false, false);
 
@@ -3127,6 +3207,7 @@ function init() {
     els.modelScoreLR,
     els.modelScoreGRA,
     els.libraryGroupSelect,
+    els.typingEntrySelect,
   ].forEach(enhanceSelect);
 
   renderSyncStatus();
