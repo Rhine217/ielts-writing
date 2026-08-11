@@ -347,6 +347,7 @@ const els = {
   libraryPagination: $("#libraryPagination"),
   exportEntryBtn: $("#exportEntryBtn"),
   importEntryBtn: $("#importEntryBtn"),
+  clearReviewBtn: $("#clearReviewBtn"),
   importModal: $("#importModal"),
   importText: $("#importText"),
   importModalClose: $("#importModalClose"),
@@ -2327,6 +2328,33 @@ function bindEvents() {
   els.importConfirmBtn.addEventListener("click", applyParsedImport);
   els.importModal.addEventListener("click", (event) => {
     if (event.target === els.importModal) closeImportModal();
+  });
+
+  // —— 清除批改（保留题目与我的版本原文） ——
+  els.clearReviewBtn.addEventListener("click", () => {
+    const entry = currentEntry();
+    if (!entry) return;
+    const ok = window.confirm(
+      "将清除本篇文章的批改内容：\n\n· 我的版本评分（总分/四维/打分依据）\n· 范文版本及其评分\n· 评语\n· 错误标注\n· 素材沉淀\n· 思路与结构\n\n题目（原题/意思/题型/日期/来源/图片）、标题和「我的版本」原文会保留。\n\n确定清除吗？",
+    );
+    if (!ok) return;
+    entry.draftScore = "";
+    entry.draftScores = {};
+    entry.draftReasons = {};
+    entry.modelScore = "";
+    entry.modelScores = {};
+    entry.modelHtml = "";
+    entry.evaluation = [
+      { title: "亮点", body: "" },
+      { title: "短板", body: "" },
+      { title: "提升路径", body: "" },
+    ];
+    entry.corrections = [];
+    entry.bank = {};
+    entry.thinking = "";
+    persist();
+    renderAll();
+    showToast("已清除批改内容（题目与我的版本保留）");
   });
   els.openLibraryBtn.addEventListener("click", showLibrary);
   els.libraryHomeBtn.addEventListener("click", showHome);
