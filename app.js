@@ -353,6 +353,17 @@ const els = {
   importModalClose: $("#importModalClose"),
   importCancelBtn: $("#importCancelBtn"),
   importConfirmBtn: $("#importConfirmBtn"),
+  typingBtn: $("#typingBtn"),
+  typingModal: $("#typingModal"),
+  typingModalClose: $("#typingModalClose"),
+  typingEntrySelect: $("#typingEntrySelect"),
+  typingTarget: $("#typingTarget"),
+  typingInput: $("#typingInput"),
+  typingRestartBtn: $("#typingRestartBtn"),
+  typingProgress: $("#typingProgress"),
+  typingAccuracy: $("#typingAccuracy"),
+  typingTime: $("#typingTime"),
+  typingSpeed: $("#typingSpeed"),
   syncStatus: $("#syncStatus"),
   syncBadge: $("#syncBadge"),
   openFileBtn: $("#openFileBtn"),
@@ -1549,6 +1560,105 @@ function closeImportModal() {
   els.importModal.classList.add("hidden");
 }
 
+/* ---------------- 打字练习 ---------------- */
+
+const typing = { target: "", startTime: 0, timer: null, finished: false };
+
+function openTypingModal() {
+  const entries = state.entries.filter((entry) => (entry.modelHtml || "").trim());
+  if (!entries.length) {
+    showToast("还没有范文可供练习，先导入或填写范文", "error");
+    return;
+  }
+  els.typingEntrySelect.innerHTML = entries
+    .map(
+      (entry) =>
+        `<option value="${entry.id}">${escapeHtml(entry.title || "未命名复盘")}（${entry.mode === "task2" ? "大作文" : "小作文"}）</option>`,
+    )
+    .join("");
+  const current = currentEntry();
+  els.typingEntrySelect.value = current && entries.some((entry) => entry.id === current.id) ? current.id : entries[0].id;
+  loadTypingEssay();
+  els.typingModal.classList.remove("hidden");
+  els.typingInput.focus();
+}
+
+function closeTypingModal() {
+  els.typingModal.classList.add("hidden");
+  stopTypingTimer();
+}
+
+function loadTypingEssay() {
+  const entry = state.entries.find((item) => item.id === els.typingEntrySelect.value);
+  if (!entry) return;
+  typing.target = htmlToText(entry.modelHtml).replace(/\r/g, "").trim();
+  typing.finished = false;
+  typing.startTime = 0;
+  stopTypingTimer();
+  els.typingInput.value = "";
+  els.typingInput.disabled = false;
+  els.typingTime.textContent = "用时 0s";
+  els.typingSpeed.textContent = "速度 –";
+  renderTyping();
+}
+
+function renderTyping() {
+  const target = typing.target;
+  const typed = els.typingInput.value;
+  const total = target.length;
+  const typedLen = typed.length;
+  let correct = 0;
+  let html = "";
+  for (let i = 0; i < total; i++) {
+    let cls = "";
+    if (i < typedLen) {
+      if (typed[i] === target[i]) {
+        cls = "ch-done";
+        correct++;
+      } else {
+        cls = "ch-wrong";
+      }
+    } else if (i === typedLen && !typing.finished) {
+      cls = "ch-current";
+    }
+    html += `<span class="${cls}">${target[i] === "\n" ? "⏎" : escapeHtml(target[i])}</span>`;
+  }
+  // 多打的内容全部记为错误
+  for (let i = total; i < typedLen; i++) html += `<span class="ch-wrong">${escapeHtml(typed[i])}</span>`;
+
+  els.typingTarget.innerHTML = html;
+  els.typingProgress.textContent = `${Math.min(typedLen, total)} / ${total}`;
+  const accuracy = typedLen ? Math.round((correct / Math.max(typedLen, 1)) * 100) : 100;
+  els.typingAccuracy.textContent = `准确率 ${accuracy}%`;
+  if (typing.startTime) {
+    const elapsed = (Date.now() - typing.startTime) / 1000;
+    els.typingTime.textContent = `用时 ${Math.round(elapsed)}s`;
+    els.typingSpeed.textContent = `速度 ${elapsed > 0 ? Math.round((typedLen / elapsed) * 60) : 0} 字符/分`;
+  }
+  if (typedLen >= total && !typing.finished) {
+    typing.finished = true;
+    stopTypingTimer();
+    els.typingInput.disabled = true;
+    const elapsed = typing.startTime ? Math.round((Date.now() - typing.startTime) / 1000) : 0;
+    showToast(`练习完成！准确率 ${accuracy}% · 用时 ${elapsed}s`);
+  }
+}
+
+function handleTypingInput() {
+  if (!typing.startTime && els.typingInput.value.length) {
+    typing.startTime = Date.now();
+    typing.timer = setInterval(renderTyping, 1000);
+  }
+  renderTyping();
+}
+
+function stopTypingTimer() {
+  if (typing.timer) {
+    clearInterval(typing.timer);
+    typing.timer = null;
+  }
+}
+
 function applyParsedImport() {
   const entry = currentEntry();
   if (!entry) return;
@@ -2580,6 +2690,7 @@ function bindEvents() {
       hideHighlightToolbar();
       closeImageModal();
       closeImportModal();
+      closeTypingModal();
       closeAllSelects();
       closeThemePopover();
     }
@@ -2607,6 +2718,16 @@ function bindEvents() {
   });
 
   els.clearHighlightBtn.addEventListener("click", clearHighlightAt);
+
+  // —— 打字练习 ——
+  els.typingBtn.addEventListener("click", openTypingModal);
+  els.typingModalClose.addEventListener("click", closeTypingModal);
+  els.typingRestartBtn.addEventListener("click", loadTypingEssay);
+  els.typingEntrySelect.addEventListener("change", loadTypingEssay);
+  els.typingInput.addEventListener("input", handleTypingInput);
+  els.typingModal.addEventListener("click", (event) => {
+    if (event.target === els.typingModal) closeTypingModal();
+  });
 
   els.bankText.addEventListener("input", () => {
     updateCurrentFromInputs();
