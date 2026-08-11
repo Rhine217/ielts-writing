@@ -1368,7 +1368,9 @@ function importBackup(file) {
 function htmlToText(html) {
   const div = document.createElement("div");
   div.innerHTML = html || "";
-  return div.textContent || "";
+  // <br> 转成换行，避免段落被合并成一行
+  div.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
+  return (div.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /* 去掉音调符号（é→e），用于打字练习的宽容比对 */
