@@ -1337,7 +1337,6 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   margin-bottom: 16px;
-  align-items: start;
 }
 
 .panel-header {
@@ -1439,8 +1438,8 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .rich-editor {
+  flex: 1;
   min-height: 360px;
-  max-height: 560px;
   overflow: auto;
   padding: 15px;
   border: 0;
@@ -1449,6 +1448,17 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
   line-height: 1.7;
   outline: none;
   white-space: pre-wrap;
+}
+
+/* 作文面板：纵向 flex，让编辑器填满剩余高度（面板等高拉伸时不留死区） */
+.essay-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.essay-panel .panel-header,
+.essay-panel .score-strip {
+  flex-shrink: 0;
 }
 
 .rich-editor,
