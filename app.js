@@ -1368,9 +1368,51 @@ function importBackup(file) {
 function htmlToText(html) {
   const div = document.createElement("div");
   div.innerHTML = html || "";
-  // <br> 转成换行，避免段落被合并成一行
-  div.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
-  return (div.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+  const blockTags = new Set([
+    "ADDRESS",
+    "ARTICLE",
+    "ASIDE",
+    "BLOCKQUOTE",
+    "DIV",
+    "FIGCAPTION",
+    "FIGURE",
+    "FOOTER",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "HEADER",
+    "LI",
+    "MAIN",
+    "NAV",
+    "P",
+    "SECTION",
+    "TR",
+  ]);
+
+  let text = "";
+
+  function readNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.nodeValue || "";
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.tagName === "BR") {
+      text += "\n";
+      return;
+    }
+
+    const isBlock = blockTags.has(node.tagName);
+    if (isBlock && text && !text.endsWith("\n")) text += "\n";
+    node.childNodes.forEach(readNode);
+    if (isBlock && !text.endsWith("\n")) text += "\n";
+  }
+
+  div.childNodes.forEach(readNode);
+  return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /* 去掉音调符号（é→e），用于打字练习的宽容比对 */
