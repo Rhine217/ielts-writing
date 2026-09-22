@@ -145,7 +145,6 @@ const demoEntries = [
     taskImage: "",
     prompt:
       "People are walking less than before. Why is this the case, and what measures can be taken to solve this problem?",
-    meaning: "现在人们走路比以前少。为什么会这样？可以采取哪些措施解决这个问题？",
     draftHtml:
       "Nowadays, people walk less than before because they rely on cars and public transport too much.<br>Another reason is that many people have sedentary jobs and spend long hours in offices.<br><br>To solve this problem, governments should build safer walking paths and encourage people to walk one stop earlier. Companies can also remind employees to take active breaks during the working day.",
     modelHtml:
@@ -193,7 +192,6 @@ const demoEntries = [
     taskImage: "",
     prompt:
       "The graph below shows changes in the consumption of three energy sources in a country from 1990 to 2020.",
-    meaning: "图表展示某国 1990 年到 2020 年三种能源消耗量的变化。",
     draftHtml:
       "The line graph shows the changes of three energy sources from 1990 to 2020. Overall, coal decreased while renewable energy increased.",
     modelHtml:
@@ -287,7 +285,6 @@ const els = {
   entryModeLabel: $("#entryModeLabel"),
   entryTitle: $("#entryTitle"),
   promptText: $("#promptText"),
-  meaningText: $("#meaningText"),
   practiceDate: $("#practiceDate"),
   entrySource: $("#entrySource"),
   taskImageField: $("#taskImageField"),
@@ -820,15 +817,16 @@ function normalizeCorrection(correction) {
 
 function normalizeEntry(entry) {
   const inferredTopic = entry.topic || inferTopic(entry.tags);
+  const entryWithoutMeaning = { ...entry };
+  delete entryWithoutMeaning.meaning;
   return {
-    ...entry,
+    ...entryWithoutMeaning,
     essayType: normalizeEssayType(entry.mode, entry.essayType),
     topic: entry.mode === "task2" ? inferredTopic || TASK2_TOPICS[0] : "",
     practiceDate: entry.practiceDate || "",
     source: entry.source || "",
     taskImage: entry.taskImage || "",
     prompt: entry.prompt || "",
-    meaning: entry.meaning || "",
     draftHtml: cleanEditorHtml(entry.draftHtml || textToHtml(entry.draft || "")),
     modelHtml: cleanEditorHtml(entry.modelHtml || textToHtml(entry.model || "")),
     draftScore: normalizeScore(entry.draftScore),
@@ -975,7 +973,6 @@ function makeEmptyEntry(mode = state.mode) {
     source: "",
     taskImage: "",
     prompt: "",
-    meaning: "",
     draftHtml: "",
     modelHtml: "",
     draftScore: "",
@@ -1431,10 +1428,6 @@ function exportEntryMarkdown() {
   if (entry.prompt) {
     lines.push("", "## 题目");
     lines.push(htmlToText(entry.prompt));
-  }
-  if (entry.meaning) {
-    lines.push("", "## 题目意思（中文）");
-    lines.push(htmlToText(entry.meaning));
   }
   const draft = htmlToText(entry.draftHtml);
   const model = htmlToText(entry.modelHtml);
@@ -2052,7 +2045,7 @@ function renderEntryList() {
     const topicMatch = state.mode !== "task2" || topicFilter === "all" || entry.topic === topicFilter;
     if (!typeMatch || !topicMatch) return false;
     if (!query) return true;
-    const haystack = [entry.title, entry.topic, entry.essayType, htmlToText(entry.prompt), htmlToText(entry.meaning)].join(" ").toLowerCase();
+    const haystack = [entry.title, entry.topic, entry.essayType, htmlToText(entry.prompt)].join(" ").toLowerCase();
     return haystack.includes(query);
   });
 
@@ -2096,7 +2089,6 @@ function renderEditor() {
   els.promptCard.classList.toggle("task2-layout", entry.mode === "task2");
   els.entryTitle.value = entry.title;
   els.promptText.innerHTML = toRichHtml(entry.prompt);
-  els.meaningText.innerHTML = toRichHtml(entry.meaning);
   els.essayType.value = entry.essayType;
   els.practiceDate.value = entry.practiceDate;
   els.entrySource.value = entry.source || "";
@@ -2446,7 +2438,6 @@ function updateCurrentFromInputs() {
 
   entry.title = els.entryTitle.value;
   entry.prompt = cleanEditorHtml(els.promptText.innerHTML);
-  entry.meaning = cleanEditorHtml(els.meaningText.innerHTML);
   entry.essayType = els.essayType.value;
   entry.practiceDate = els.practiceDate.value;
   entry.source = els.entrySource.value.trim();
@@ -2685,7 +2676,7 @@ function bindEvents() {
     renderAll();
   });
 
-  [els.entryTitle, els.promptText, els.meaningText, els.essayType, els.practiceDate, els.entrySource, els.topicSelect, els.thinkingText, els.draftReasonTR, els.draftReasonCC, els.draftReasonLR, els.draftReasonGRA].forEach((input) => {
+  [els.entryTitle, els.promptText, els.essayType, els.practiceDate, els.entrySource, els.topicSelect, els.thinkingText, els.draftReasonTR, els.draftReasonCC, els.draftReasonLR, els.draftReasonGRA].forEach((input) => {
     input.addEventListener("input", () => {
       updateCurrentFromInputs();
       persist();
@@ -3224,7 +3215,7 @@ function cleanEditorHtml(html) {
 /* ---------------- 自适应高度（提示区等） ---------------- */
 
 function autoResizeTextareas() {
-  [els.promptText, els.meaningText].forEach((textarea) => {
+  [els.promptText].forEach((textarea) => {
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 86), 220)}px`;
   });
