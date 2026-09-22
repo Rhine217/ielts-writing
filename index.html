@@ -432,11 +432,11 @@
           <strong>粘贴批改结果</strong>
           <button class="icon-button" id="importModalClose" type="button" aria-label="关闭">×</button>
         </div>
-        <p class="import-modal-hint">粘贴 AI 批改输出，自动解析【分数】【评语】【错误】【表达】【范文】【思路】并填入本篇文章。</p>
+        <p class="import-modal-hint">粘贴 AI 批改输出，自动解析【分数】【评语】【错误】【表达】【范文】【思路】，并替换本篇文章已有的批改内容。</p>
         <textarea id="importText" rows="12" spellcheck="false" placeholder="【分数】&#10;总分：6.5&#10;TR：6 ｜ CC：6.5 ｜ LR：6 ｜ GRA：6.5&#10;&#10;【评语】&#10;亮点：…&#10;短板：…&#10;提升路径：…&#10;&#10;【错误】&#10;[语法] 原句：… ｜ 原因：… ｜ 修改：… ｜ 提升：…"></textarea>
         <div class="import-modal-actions">
           <button class="secondary-button" id="importCancelBtn" type="button">取消</button>
-          <button class="primary-button" id="importConfirmBtn" type="button">解析导入</button>
+          <button class="primary-button" id="importConfirmBtn" type="button">解析并替换</button>
         </div>
       </div>
     </div>
@@ -467,6 +467,6 @@
 
     <input type="file" id="fileOpenInput" accept="application/json,.json" class="hidden" aria-hidden="true" tabindex="-1" />
 
-    <script src="app.js?v=24"></script>
+    <script src="app.js?v=25"></script>
   </body>
 </html>

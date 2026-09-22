@@ -1657,6 +1657,23 @@ function closeImportModal() {
   els.importModal.classList.add("hidden");
 }
 
+function clearReviewContent(entry) {
+  entry.draftScore = "";
+  entry.draftScores = {};
+  entry.draftReasons = {};
+  entry.modelScore = "";
+  entry.modelScores = {};
+  entry.modelHtml = "";
+  entry.evaluation = [
+    { title: "亮点", body: "" },
+    { title: "短板", body: "" },
+    { title: "提升路径", body: "" },
+  ];
+  entry.corrections = [];
+  entry.bank = {};
+  entry.thinking = "";
+}
+
 /* ---------------- 打字练习 ---------------- */
 
 const typing = { target: "", startTime: 0, timer: null, finished: false };
@@ -1773,6 +1790,19 @@ function applyParsedImport() {
   const bank = parseImportBank(importSection(raw, "【表达】"), entry.mode);
   const model = importSection(raw, "【范文】");
   const thinking = parseImportThinking(importSection(raw, "【思路】"));
+  const hasScores = Boolean(
+    scores.total || SCORE_DIMENSIONS.some((dim) => scores[dim.key]) || Object.values(scores.reasons || {}).some(Boolean),
+  );
+  const hasImportContent = Boolean(
+    hasScores || evalSections?.length || corrections.length || Object.keys(bank).length || model || thinking.thinking,
+  );
+  if (!hasImportContent) {
+    showToast("未识别到可导入的内容，请确认格式", "error");
+    return;
+  }
+
+  // 每次导入都是本篇批改结果的完整替换，避免新旧批改内容混在一起。
+  clearReviewContent(entry);
 
   if (scores.total) entry.draftScore = scores.total;
   SCORE_DIMENSIONS.forEach((dim) => {
@@ -1784,11 +1814,11 @@ function applyParsedImport() {
     });
   }
   if (evalSections && evalSections.length) entry.evaluation = evalSections;
-  if (corrections.length) entry.corrections.push(...corrections);
-  // 素材追加：纯文本条目转 HTML（<br> 换行），兼容富文本内容
+  if (corrections.length) entry.corrections = corrections;
+  // 纯文本素材条目转 HTML（<br> 换行），兼容富文本内容
   const bankKeys = Object.keys(bank);
   bankKeys.forEach((key) => {
-    entry.bank[key] = appendLine(entry.bank[key], textToHtml(bank[key]));
+    entry.bank[key] = textToHtml(bank[key]);
   });
   if (bankKeys.length) state.bankTab = bankKeys[0];
   if (model) entry.modelHtml = textToHtml(model);
@@ -1800,6 +1830,7 @@ function applyParsedImport() {
 
   const parts = [];
   if (scores.total) parts.push(`分数 ${scores.total}`);
+  else if (hasScores) parts.push("评分");
   const reasonCount = Object.values(scores.reasons || {}).filter(Boolean).length;
   if (reasonCount) parts.push(`依据 ${reasonCount} 条`);
   if (evalSections && evalSections.length) parts.push(`评语 ${evalSections.length} 段`);
@@ -1808,7 +1839,7 @@ function applyParsedImport() {
   if (bankCount) parts.push(`表达 ${bankCount} 条`);
   if (model) parts.push("范文");
   if (thinking.thinking) parts.push("思路");
-  showToast(parts.length ? `导入完成：${parts.join(" · ")}` : "未识别到可导入的内容，请确认格式", parts.length ? "ok" : "error");
+  showToast(`已替换批改：${parts.join(" · ")}`);
 }
 
 /* ---------------- 渲染：选项与评分 ---------------- */
@@ -2568,20 +2599,7 @@ function bindEvents() {
       "将清除本篇文章的批改内容：\n\n· 我的版本评分（总分/四维/打分依据）\n· 范文版本及其评分\n· 评语\n· 错误标注\n· 素材沉淀\n· 思路与结构\n\n题目（原题/意思/题型/日期/来源/图片）、标题和「我的版本」原文会保留。\n\n确定清除吗？",
     );
     if (!ok) return;
-    entry.draftScore = "";
-    entry.draftScores = {};
-    entry.draftReasons = {};
-    entry.modelScore = "";
-    entry.modelScores = {};
-    entry.modelHtml = "";
-    entry.evaluation = [
-      { title: "亮点", body: "" },
-      { title: "短板", body: "" },
-      { title: "提升路径", body: "" },
-    ];
-    entry.corrections = [];
-    entry.bank = {};
-    entry.thinking = "";
+    clearReviewContent(entry);
     persist();
     renderAll();
     showToast("已清除批改内容（题目与我的版本保留）");
