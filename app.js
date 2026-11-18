@@ -113,10 +113,10 @@ const THEMES = {
   midnight: { name: "深夜", dark: true, accent: "#7aa7d9", ink: "#e7ebf1", muted: "#94a0b0", line: "#2b3440", panel: "#1b212b", soft: "#242d39", bg: "#12161d", surface: "#181e27", green: "#6cc39f", red: "#e08d83", amber: "#e0b25c" },
 };
 
-const STORAGE_KEY = "ielts-writing-review-v4";
-const LEGACY_KEYS = ["ielts-writing-review-v3", "ielts-writing-review-v2", "ielts-writing-review-v1"];
+const STORAGE_KEY = "ielts-writing-review-data-v4";
+const LEGACY_KEYS = ["ielts-writing-review-v4", "ielts-writing-review-v3", "ielts-writing-review-v2", "ielts-writing-review-v1"];
 const PREF_KEY = "ielts-writing-review-preferences-v2";
-const DATA_VERSION = 3;
+const DATA_VERSION = 4;
 const LIBRARY_PAGE_SIZE = 6;
 const SUMMARY_DEFAULT =
   "大作文：先判断题型，再决定段落任务。单边讨论要立场清晰，双边讨论要两边都回应，问题措施要原因和措施对应，复合问题要逐问回答。\n\n小作文：先写总览，再分组写细节。不要一上来堆数字，先看最高、最低、变化最大、趋势相反。\n\n考前提醒：少写空泛词，多写具体动作；注意 government / environment / convenient / comparison 这些易错拼写。";
@@ -234,19 +234,20 @@ const CORRECTION_FILTER_DEFAULT = Object.fromEntries(CORRECTION_KINDS.map((c) =>
 
 const state = {
   entries: [],
+  materials: [],
+  migrationReport: null,
+  preferenceExtras: {},
+  legacyFileName: "",
   currentId: "",
   mode: "task2",
-  libraryMode: "task2",
-  libraryGroup: "all",
-  libraryBankTab: "keyNotes",
+  libraryBankTab: "expression",
   libraryPage: 1,
-  bankTab: "collocations",
+  bankTab: "expression",
   selectedEditor: null,
   selectedText: "",
   highlightTarget: null,
   highlightLabels: Object.fromEntries(HIGHLIGHTS),
   bankLabels: clone(BANK_SCHEMAS),
-  editingBankLabels: false,
   examSummary: SUMMARY_DEFAULT,
   editingSummary: false,
   theme: "ocean",
@@ -314,7 +315,6 @@ const els = {
   modelScoreAvg: $("#modelScoreAvg"),
   draftStats: $("#draftStats"),
   modelStats: $("#modelStats"),
-  bankText: $("#bankText"),
   thinkingText: $("#thinkingText"),
   correctionList: $("#correctionList"),
   correctionFilterBar: $("#correctionFilterBar"),
@@ -330,16 +330,12 @@ const els = {
   highlightLegend: $("#highlightLegend"),
   bankSubmenu: $("#bankSubmenu"),
   detailBankTabs: $("#detailBankTabs"),
-  editBankLabelsBtn: $("#editBankLabelsBtn"),
-  bankLabelEditor: $("#bankLabelEditor"),
   summaryDisplay: $("#summaryDisplay"),
   summaryEditor: $("#summaryEditor"),
   editSummaryBtn: $("#editSummaryBtn"),
   saveSummaryBtn: $("#saveSummaryBtn"),
   openLibraryBtn: $("#openLibraryBtn"),
   libraryHomeBtn: $("#libraryHomeBtn"),
-  libraryGroupLabel: $("#libraryGroupLabel"),
-  libraryGroupSelect: $("#libraryGroupSelect"),
   libraryBankTabs: $("#libraryBankTabs"),
   libraryContent: $("#libraryContent"),
   libraryPagination: $("#libraryPagination"),
@@ -395,12 +391,6 @@ function escapeHtml(value) {
 function wordCount(text) {
   const words = text.trim().match(/[A-Za-z]+(?:[-'][A-Za-z]+)?|\d+(?:\.\d+)?/g);
   return words ? words.length : 0;
-}
-
-function appendLine(existing, line) {
-  const next = String(line || "").trim();
-  if (!next) return existing || "";
-  return existing ? `${existing.trim()}\n${next}` : next;
 }
 
 function textToHtml(text) {
@@ -869,40 +859,66 @@ function mergeBankLabels(labels = {}) {
 
 function buildPreferences() {
   return {
+    ...state.preferenceExtras,
     highlightLabels: { ...state.highlightLabels },
     bankLabels: clone(state.bankLabels),
     examSummary: state.examSummary,
     theme: state.theme,
     fontScale: state.fontScale,
     correctionFilter: { ...state.correctionFilter },
-    file: { name: state.fileName, autoSave: state.autoSave },
+    file: { ...state.preferenceExtras.file, name: state.fileName, autoSave: state.autoSave },
   };
 }
 
 function buildDataFile() {
-  updateCurrentFromInputs();
   return {
     app: "ielts-writing-review",
     version: DATA_VERSION,
     kind: "data",
     exportedAt: new Date().toISOString(),
-    entries: clone(state.entries),
+    entries: state.entries,
+    materials: state.materials,
     preferences: buildPreferences(),
+    ...(state.migrationReport && { migrationReport: state.migrationReport }),
   };
 }
 
-/* 数据迁移：统一入口，旧版本/无版本数据一律经 normalizeEntry 归一化，
- * 返回最新版本号。migrated 为 true 表示数据被升级过（可在后续保存时回写）。 */
 function migrateData(data) {
-  const version = Number(data?.version) || 0;
-  let entries = Array.isArray(data) ? data : data.entries;
-  if (!Array.isArray(entries)) throw new Error("Invalid data file");
-  return {
-    version: DATA_VERSION,
-    migrated: version !== DATA_VERSION,
-    entries: entries.map(normalizeEntry),
-    preferences: data?.preferences || {},
-  };
+  const version = Number(data?.version ?? 0);
+  if (data?.app && data.app !== "ielts-writing-review") throw new Error("不是 IELTS Writing Review 数据");
+  if (!Number.isInteger(version) || version < 0 || version > DATA_VERSION) throw new Error("不支持的 JSON 版本");
+  if (version === DATA_VERSION) return readV4Data(data);
+  if (version === 3) return migrateV3ToV4(data);
+  const entries = Array.isArray(data) ? data : data?.entries;
+  if (!Array.isArray(entries)) throw new Error("缺少作文记录");
+  return migrateV3ToV4({
+    entries: entries.map((entry, index) => normalizeEntry({ ...entry, id: entry.id || `legacy-entry-${index + 1}` })),
+    preferences: data?.preferences,
+  });
+}
+
+function setLoadedData(data) {
+  state.entries = data.entries;
+  state.materials = data.materials;
+  state.migrationReport = data.migrationReport || null;
+  mergePreferences(data.preferences);
+  state.currentId = "";
+  state.mode = "task2";
+  state.bankTab = "expression";
+  state.libraryBankTab = "expression";
+  state.libraryPage = 1;
+  for (const id of ["librarySearch", "libraryTask", "libraryTopic", "librarySubtype", "librarySource", "libraryReview"]) {
+    document.getElementById(id).value = "";
+  }
+  $("#libraryFavorites").checked = false;
+}
+
+function migrationSummary(data) {
+  const report = data.migrationReport;
+  if (!report) return "";
+  const warnings = report.issues?.length || 0;
+  const detail = warnings ? ` · ${warnings} 个迁移提示，详见导出 JSON 的 migrationReport` : "";
+  return ` · v4 迁移 ${report.migratedBlocks} 个素材块 / ${report.materialsCreated} 条${detail}`;
 }
 
 function loadPreferences() {
@@ -910,12 +926,7 @@ function loadPreferences() {
     const raw = localStorage.getItem(PREF_KEY);
     if (!raw) return;
     const prefs = JSON.parse(raw);
-    state.highlightLabels = mergeHighlightLabels(prefs.highlightLabels);
-    state.bankLabels = mergeBankLabels(prefs.bankLabels);
-    state.examSummary = prefs.examSummary || state.examSummary;
-    if (THEMES[prefs.theme]) state.theme = prefs.theme;
-    if (typeof prefs.fontScale === "number" && prefs.fontScale >= 0.8 && prefs.fontScale <= 1.5) state.fontScale = prefs.fontScale;
-    if (prefs.correctionFilter) state.correctionFilter = { ...CORRECTION_FILTER_DEFAULT, ...prefs.correctionFilter };
+    mergePreferences(prefs);
     state.fileName = prefs.file?.name || "";
     state.autoSave = prefs.file?.autoSave ?? false;
   } catch {
@@ -924,23 +935,18 @@ function loadPreferences() {
 }
 
 function loadLocalEntries() {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored) {
+  for (const key of [STORAGE_KEY, ...LEGACY_KEYS]) {
+    const stored = localStorage.getItem(key);
+    if (!stored) continue;
     try {
-      state.entries = JSON.parse(stored).map(normalizeEntry);
+      setLoadedData(parseDataText(stored));
       persist({ skipFile: true });
       return;
-    } catch {
-      /* 继续向下尝试旧版本 */
+    } catch (error) {
+      console.warn("无法读取本地记录", error);
     }
   }
-  const legacyValue = LEGACY_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
-  if (legacyValue) {
-    state.entries = JSON.parse(legacyValue).map(normalizeEntry);
-    persist({ skipFile: true });
-    return;
-  }
-  state.entries = clone(demoEntries).map(normalizeEntry);
+  setLoadedData(migrateData(clone(demoEntries)));
   persist({ skipFile: true });
 }
 
@@ -948,7 +954,7 @@ let persistTimer = null;
 function flushPersist() {
   persistTimer = null;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.entries));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildDataFile()));
     localStorage.setItem(PREF_KEY, JSON.stringify(buildPreferences()));
   } catch (error) {
     console.warn("localStorage 写入失败", error);
@@ -963,8 +969,8 @@ function persist({ skipFile = false } = {}) {
 }
 
 function makeEmptyEntry(mode = state.mode) {
-  return normalizeEntry({
-    id: `entry-${Date.now()}`,
+  return {
+    id: `entry-${crypto.randomUUID?.() || Date.now()}`,
     mode,
     title: mode === "task2" ? "新的大作文复盘" : "新的小作文复盘",
     essayType: TASK_TYPES[mode][0],
@@ -980,7 +986,8 @@ function makeEmptyEntry(mode = state.mode) {
     draftScores: {},
     modelScores: {},
     draftReasons: {},
-    bank: {},
+    legacyBank: {},
+    materialIds: [],
     corrections: [],
     evaluation: [
       { title: "亮点", body: "" },
@@ -988,7 +995,7 @@ function makeEmptyEntry(mode = state.mode) {
       { title: "提升路径", body: "" },
     ],
     thinking: "",
-  });
+  };
 }
 
 function currentEntry() {
@@ -1027,7 +1034,9 @@ async function storeFileHandle(handle) {
   try {
     const db = await openHandleDB();
     const transaction = db.transaction("handles", "readwrite");
-    transaction.objectStore("handles").put(handle, "main");
+    const store = transaction.objectStore("handles");
+    if (handle) store.put(handle, "main");
+    else store.delete("main");
     await transactionDone(transaction);
   } catch (error) {
     console.warn("无法保存文件句柄", error);
@@ -1045,9 +1054,10 @@ async function getStoredFileHandle() {
 }
 
 function mergePreferences(prefs = {}) {
+  state.preferenceExtras = { ...state.preferenceExtras, ...prefs };
   if (prefs.highlightLabels) state.highlightLabels = mergeHighlightLabels(prefs.highlightLabels);
   if (prefs.bankLabels) state.bankLabels = mergeBankLabels(prefs.bankLabels);
-  if (prefs.examSummary) state.examSummary = prefs.examSummary;
+  if (typeof prefs.examSummary === "string") state.examSummary = prefs.examSummary;
   if (THEMES[prefs.theme]) state.theme = prefs.theme;
   if (prefs.correctionFilter) state.correctionFilter = { ...CORRECTION_FILTER_DEFAULT, ...prefs.correctionFilter };
 }
@@ -1056,35 +1066,38 @@ function parseDataText(text) {
   return migrateData(JSON.parse(text));
 }
 
-async function adoptFile(handle, text, autoSave = false, nameOverride = "") {
+async function adoptFile(handle, text, autoSave = false, nameOverride = "", lastModified = null) {
   try {
-    const { entries, preferences } = parseDataText(text);
-    state.entries = entries.map(normalizeEntry);
-    mergePreferences(preferences);
-    state.currentId = "";
-    state.mode = "task2";
-    state.libraryMode = "task2";
-    state.libraryGroup = "all";
-    state.libraryPage = 1;
-    state.bankTab = "collocations";
+    const raw = JSON.parse(text);
+    const data = migrateData(raw);
+    const legacy = Number(raw.version) !== DATA_VERSION;
+    const sourceName = nameOverride || handle?.name || "已选择的文件";
+    if (legacy) handle = null;
+    setLoadedData(data);
     state.fileHandle = handle || null;
-    state.fileLastModified = handle ? (await handle.getFile()).lastModified : null;
-    state.fileName = nameOverride || handle?.name || preferences.file?.name || "已选择的文件";
-    state.autoSave = autoSave;
+    state.fileLastModified = handle ? lastModified : null;
+    state.fileName = handle?.name || "";
+    state.legacyFileName = legacy ? sourceName : "";
+    state.fileLastSaved = "";
+    state.autoSave = Boolean(handle && autoSave);
     state.pendingFileName = "";
-    if (handle) await storeFileHandle(handle);
+    clearTimeout(saveTimer);
+    flushPersist();
+    await storeFileHandle(handle);
     applyTheme(state.theme);
-    persist();
+    applyFontScale(state.fontScale);
     renderAll();
     renderSyncStatus();
-    showToast(`已加载「${state.fileName}」· ${state.entries.length} 篇`);
+    showToast(`已加载「${sourceName}」· ${state.entries.length} 篇${legacy ? migrationSummary(data) : ""}`);
+    return true;
   } catch (error) {
     showToast(`读取文件失败：${error.message}`, "error");
+    return false;
   }
 }
 
 async function bindDataFile() {
-  if (state.entries.length && !state.fileHandle) {
+  if (state.entries.length) {
     const proceed = window.confirm(
       `当前浏览器里已有 ${state.entries.length} 篇记录。\n\n打开文件后，数据会切换到所选文件中的内容（本地现有记录会被覆盖，可先点「导出备份」留存）。\n\n确定继续吗？`,
     );
@@ -1104,7 +1117,7 @@ async function bindDataFile() {
     }
     const file = await handle.getFile();
     const text = await file.text();
-    await adoptFile(handle, text, false);
+    await adoptFile(handle, text, false, "", file.lastModified);
     return;
   }
   // 回退：文件选择器（无法自动写回，只能手动保存）
@@ -1130,30 +1143,39 @@ async function createDataFile() {
         return;
       }
     }
-    const fileName = "ielts-writing-review-data.json";
-    // 同名文件已存在则确认是否覆盖
+    const fileName = "ielts-writing-review-data.v4.json";
+    // 新建使用独立文件名，已有文件可通过「打开/绑定文件」选择。
     let exists = true;
     try {
       await dirHandle.getFileHandle(fileName, { create: false });
     } catch {
       exists = false;
     }
-    if (exists && !window.confirm(`该目录下已存在「${fileName}」，新建会覆盖它的内容。确定继续吗？`)) {
+    if (exists) {
+      showToast(`该目录已有「${fileName}」，请选择其他目录或打开现有文件`, "error");
       return;
     }
     let fileHandle;
+    let createdFile;
     try {
       fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+      createdFile = await fileHandle.getFile();
+      if (createdFile.size) {
+        showToast(`该目录已有「${fileName}」，请直接打开现有文件`, "error");
+        return;
+      }
     } catch (error) {
       showToast(`创建文件失败：${error.message}`, "error");
       return;
     }
     // 用当前数据初始化新文件，之后自动保存
     state.fileHandle = fileHandle;
-    state.fileLastModified = null;
+    state.fileLastModified = createdFile.lastModified;
     state.fileName = fileName;
+    state.legacyFileName = "";
     state.autoSave = false;
     state.pendingFileName = "";
+    clearTimeout(saveTimer);
     await storeFileHandle(fileHandle);
     const ok = await writeToFile();
     if (ok) {
@@ -1177,18 +1199,24 @@ function writeToFile() {
 
 async function performWriteToFile() {
   if (!state.fileHandle) return false;
+  const handle = state.fileHandle;
   try {
-    const permission = await state.fileHandle.queryPermission({ mode: "readwrite" });
+    const permission = await handle.queryPermission({ mode: "readwrite" });
     if (permission !== "granted") {
-      const requested = await state.fileHandle.requestPermission({ mode: "readwrite" });
+      const requested = await handle.requestPermission({ mode: "readwrite" });
       if (requested !== "granted") {
         showToast("没有写入权限，请重新绑定文件", "error");
         return false;
       }
     }
     // 冲突检测：文件自绑定以来被其他设备/程序改过 → 提示是否覆盖
+    if (handle !== state.fileHandle) return false;
+    const diskFile = await handle.getFile();
+    if (diskFile.size && Number(JSON.parse(await diskFile.text()).version) !== DATA_VERSION) {
+      showToast("旧版本文件仅供读取，请另存 v4 文件", "error");
+      return false;
+    }
     if (state.fileLastModified != null) {
-      const diskFile = await state.fileHandle.getFile();
       if (diskFile.lastModified !== state.fileLastModified) {
         const overwrite = window.confirm(
           `文件「${state.fileName}」自加载后已被其他设备或程序修改过。\n继续保存会覆盖这些外部修改。\n\n确定覆盖吗？`,
@@ -1199,10 +1227,13 @@ async function performWriteToFile() {
         }
       }
     }
-    const writable = await state.fileHandle.createWritable();
-    await writable.write(JSON.stringify(buildDataFile(), null, 2));
+    if (handle !== state.fileHandle) return false;
+    const contents = JSON.stringify(buildDataFile(), null, 2);
+    const writable = await handle.createWritable();
+    await writable.write(contents);
     await writable.close();
-    const savedFile = await state.fileHandle.getFile();
+    const savedFile = await handle.getFile();
+    if (handle !== state.fileHandle) return true;
     state.fileLastModified = savedFile.lastModified;
     state.fileLastSaved = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     renderSyncStatus();
@@ -1227,7 +1258,7 @@ function downloadDataFile() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `ielts-writing-review-data.json`;
+  link.download = "ielts-writing-review-data.v4.json";
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -1246,18 +1277,14 @@ async function restoreFileBinding() {
     }
     const file = await handle.getFile();
     const text = await file.text();
-    const { entries, preferences } = parseDataText(text);
-    state.entries = entries.map(normalizeEntry);
-    mergePreferences(preferences);
-    state.fileHandle = handle;
-    state.fileLastModified = file.lastModified;
-    state.fileName = handle.name || state.fileName;
-    state.pendingFileName = "";
-    applyTheme(state.theme);
-    persist();
-    renderAll();
-    renderSyncStatus();
-    return true;
+    const raw = JSON.parse(text);
+    if (Number(raw.version) !== DATA_VERSION && localStorage.getItem(STORAGE_KEY)) {
+      state.legacyFileName = handle.name;
+      state.autoSave = false;
+      await storeFileHandle(null);
+      return false;
+    }
+    return adoptFile(handle, text, state.autoSave, "", file.lastModified);
   } catch (error) {
     console.warn("恢复文件绑定失败", error);
     renderSyncStatus();
@@ -1288,6 +1315,10 @@ function renderSyncStatus() {
       els.syncStatus.textContent = `上次绑定「${state.pendingFileName}」待授权，重新打开文件即可继续同步`;
       els.syncBadge.textContent = "待授权";
       els.syncBadge.className = "sync-badge local";
+    } else if (state.legacyFileName) {
+      els.syncStatus.textContent = `「${state.legacyFileName}」已只读导入 · 点「保存到文件」另存 v4`;
+      els.syncBadge.textContent = "已迁移";
+      els.syncBadge.className = "sync-badge local";
     } else {
       els.syncStatus.textContent = "未绑定文件 · 数据保存在浏览器本地";
       els.syncBadge.textContent = "本地";
@@ -1309,7 +1340,8 @@ function renderSyncStatus() {
     els.syncBadge.textContent = state.autoSave ? "自动同步" : "手动同步";
     els.syncBadge.className = "sync-badge synced";
   }
-  els.autoSaveToggle.checked = state.autoSave;
+  els.autoSaveToggle.checked = Boolean(state.fileHandle && state.autoSave);
+  els.autoSaveToggle.disabled = !state.fileHandle;
 }
 
 /* ---------------- 备份导入 / 导出 ---------------- */
@@ -1326,38 +1358,6 @@ function downloadBackup() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-}
-
-function importBackup(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.addEventListener("load", () => {
-    try {
-      const data = JSON.parse(String(reader.result || ""));
-      const migrated = migrateData(data);
-      const entries = migrated.entries;
-      if (!window.confirm("导入后会替换当前的所有复盘数据（包括已绑定文件里的内容），确定继续吗？")) return;
-
-      state.entries = entries.map(normalizeEntry);
-      mergePreferences(migrated.preferences);
-      state.currentId = "";
-      state.mode = "task2";
-      state.libraryMode = "task2";
-      state.libraryGroup = "all";
-      state.libraryPage = 1;
-      state.bankTab = "collocations";
-      applyTheme(state.theme);
-      persist();
-      renderAll();
-      renderSyncStatus();
-      window.alert("导入完成。");
-    } catch {
-      window.alert("导入失败，请确认选择的是 IELTS Writing Review 的 JSON 备份文件。");
-    } finally {
-      els.importBackupInput.value = "";
-    }
-  });
-  reader.readAsText(file);
 }
 
 /* ---------------- 导出单篇复盘（Markdown） ---------------- */
@@ -1479,15 +1479,17 @@ function exportEntryMarkdown() {
       if (correction.comment) lines.push(`- 批注：${htmlToText(correction.comment)}`);
     });
   }
-  const bankEntries = Object.entries(entry.bank || {}).filter(([, value]) => value && value.trim());
-  if (bankEntries.length) {
+  const materials = state.materials.filter((material) => material.sourceEntryId === entry.id);
+  if (materials.length) {
     lines.push("", "## 素材沉淀");
-    const schema = getBankSchema(entry.mode);
-    bankEntries.forEach(([key, value]) => {
-      lines.push(`### ${schema[key] || key}`);
-      lines.push(htmlToText(value));
-      lines.push("");
-    });
+    for (const material of materials) {
+      const type = MATERIAL_TYPES[material.category].types[material.subtype];
+      lines.push("", `### ${type}`, material.plainText || materialPlainText(safeMaterialHtml(material.contentHtml)));
+      if (material.translation) lines.push(material.translation);
+      if (material.context) lines.push(`使用场景：${material.context}`);
+      if (material.note) lines.push(`备注：${material.note}`);
+      if (material.tags?.length) lines.push(`标签：${material.tags.join("、")}`);
+    }
   }
   if (entry.thinking) {
     lines.push("", "## 思路与结构");
@@ -1587,7 +1589,10 @@ function parseImportCorrections(text) {
 
 function parseImportBank(text, mode) {
   const schema = getBankSchema(mode);
-  const labelToKey = {};
+  const labelToKey = Object.create(null);
+  for (const [field, [category, subtype]] of LEGACY_MATERIAL_FIELDS) {
+    labelToKey[MATERIAL_TYPES[category].types[subtype]] = field;
+  }
   Object.entries(schema).forEach(([key, label]) => {
     labelToKey[label] = key;
     labelToKey[key] = key;
@@ -1606,7 +1611,7 @@ function parseImportBank(text, mode) {
       const key = labelToKey[header];
       if (key) {
         current = key;
-        bank[current] = [];
+        bank[current] ||= [];
         const rest = colonMatch[2].replace(/^[-•*]\s*/, "").trim();
         if (rest) bank[current].push(rest);
         return;
@@ -1615,7 +1620,7 @@ function parseImportBank(text, mode) {
     const bareHeader = line.replace(/^【/, "").replace(/】$/, "").trim();
     if (labelToKey[bareHeader]) {
       current = labelToKey[bareHeader];
-      bank[current] = [];
+      bank[current] ||= [];
       return;
     }
     if (!current) return;
@@ -1663,7 +1668,6 @@ function clearReviewContent(entry) {
     { title: "提升路径", body: "" },
   ];
   entry.corrections = [];
-  entry.bank = {};
   entry.thinking = "";
 }
 
@@ -1680,7 +1684,7 @@ function openTypingModal() {
   els.typingEntrySelect.innerHTML = entries
     .map(
       (entry) =>
-        `<option value="${entry.id}">${escapeHtml(entry.title || "未命名复盘")}（${entry.mode === "task2" ? "大作文" : "小作文"}）</option>`,
+        `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.title || "未命名复盘")}（${entry.mode === "task2" ? "大作文" : "小作文"}）</option>`,
     )
     .join("");
   const current = currentEntry();
@@ -1796,6 +1800,7 @@ function applyParsedImport() {
 
   // 每次导入都是本篇批改结果的完整替换，避免新旧批改内容混在一起。
   clearReviewContent(entry);
+  removeEntryMaterials(entry, (item) => item.sourceField === "review-import" || LEGACY_MATERIAL_FIELDS.has(item.sourceField));
 
   if (scores.total) entry.draftScore = scores.total;
   SCORE_DIMENSIONS.forEach((dim) => {
@@ -1808,12 +1813,11 @@ function applyParsedImport() {
   }
   if (evalSections && evalSections.length) entry.evaluation = evalSections;
   if (corrections.length) entry.corrections = corrections;
-  // 纯文本素材条目转 HTML（<br> 换行），兼容富文本内容
-  const bankKeys = Object.keys(bank);
-  bankKeys.forEach((key) => {
-    entry.bank[key] = textToHtml(bank[key]);
-  });
-  if (bankKeys.length) state.bankTab = bankKeys[0];
+  const imported = migrateBank(entry.id, bank).materials.map((material) => ({
+    ...material, id: material.id.replace("material-v3:", "material-import:"), sourceField: "review-import",
+  }));
+  addMaterials(entry, imported);
+  if (imported.length) state.bankTab = imported[0].category;
   if (model) entry.modelHtml = textToHtml(model);
   if (thinking.thinking) entry.thinking = thinking.thinking;
 
@@ -1828,8 +1832,7 @@ function applyParsedImport() {
   if (reasonCount) parts.push(`依据 ${reasonCount} 条`);
   if (evalSections && evalSections.length) parts.push(`评语 ${evalSections.length} 段`);
   if (corrections.length) parts.push(`错误 ${corrections.length} 条`);
-  const bankCount = Object.values(bank).reduce((acc, value) => acc + value.split("\n").length, 0);
-  if (bankCount) parts.push(`表达 ${bankCount} 条`);
+  if (imported.length) parts.push(`素材 ${imported.length} 条`);
   if (model) parts.push("范文");
   if (thinking.thinking) parts.push("思路");
   showToast(`已替换批改：${parts.join(" · ")}`);
@@ -2028,8 +2031,8 @@ function daysSince(dateString) {
 }
 
 function renderSummary() {
-  els.summaryDisplay.innerHTML = toRichHtml(state.examSummary || "还没有写总结。");
-  els.summaryEditor.innerHTML = toRichHtml(state.examSummary);
+  els.summaryDisplay.innerHTML = safeMaterialHtml(toRichHtml(state.examSummary || "还没有写总结。"));
+  els.summaryEditor.innerHTML = safeMaterialHtml(toRichHtml(state.examSummary));
   els.summaryDisplay.classList.toggle("hidden", state.editingSummary);
   els.summaryEditor.classList.toggle("hidden", !state.editingSummary);
   els.editSummaryBtn.classList.toggle("hidden", state.editingSummary);
@@ -2056,7 +2059,7 @@ function renderEntryList() {
       const typeText = entry.mode === "task2" ? entry.essayType : "小作文";
       const score = entry.draftScore || entry.modelScore;
       return `
-        <button class="entry-card ${entry.id === state.currentId ? "active" : ""}" data-entry-id="${entry.id}">
+        <button class="entry-card ${entry.id === state.currentId ? "active" : ""}" data-entry-id="${escapeHtml(entry.id)}">
           <span class="entry-card-top">
             <strong>${escapeHtml(entry.title || "未命名复盘")}</strong>
             ${score ? `<b class="card-score">${escapeHtml(score)}</b>` : ""}
@@ -2064,7 +2067,7 @@ function renderEntryList() {
           <span class="entry-meta">
             <em>${escapeHtml(typeText)}</em>
             <b class="mini-tag ${tagClass}">${escapeHtml(tagLabel || "未分类")}</b>
-            <em>${entry.practiceDate || "未记录日期"}</em>
+            <em>${escapeHtml(entry.practiceDate || "未记录日期")}</em>
           </span>
         </button>
       `;
@@ -2088,7 +2091,7 @@ function renderEditor() {
   els.promptCard.classList.toggle("task1-layout", entry.mode === "task1");
   els.promptCard.classList.toggle("task2-layout", entry.mode === "task2");
   els.entryTitle.value = entry.title;
-  els.promptText.innerHTML = toRichHtml(entry.prompt);
+  els.promptText.innerHTML = safeMaterialHtml(toRichHtml(entry.prompt));
   els.essayType.value = entry.essayType;
   els.practiceDate.value = entry.practiceDate;
   els.entrySource.value = entry.source || "";
@@ -2096,24 +2099,21 @@ function renderEditor() {
   els.topicField.classList.toggle("hidden", entry.mode !== "task2");
   els.taskImageField.classList.toggle("hidden", entry.mode !== "task1");
   renderTaskImage(entry);
-  entry.draftHtml = cleanEditorHtml(entry.draftHtml);
-  entry.modelHtml = cleanEditorHtml(entry.modelHtml);
-  els.draftEditor.innerHTML = entry.draftHtml;
-  els.modelEditor.innerHTML = entry.modelHtml;
-  els.thinkingText.innerHTML = toRichHtml(entry.thinking);
+  els.draftEditor.innerHTML = safeMaterialHtml(entry.draftHtml || "");
+  els.modelEditor.innerHTML = safeMaterialHtml(entry.modelHtml || "");
+  els.thinkingText.innerHTML = safeMaterialHtml(toRichHtml(entry.thinking ?? [entry.stance, entry.arguments].filter(Boolean).join("\n\n")));
 
   renderScoreStrip(entry);
   updateStats();
   renderEvaluation(entry);
   renderCorrections();
-  renderBankTabs(entry.mode);
+  renderDetailMaterials();
   renderHighlightLegend();
   renderBankSubmenu();
   autoResizeTextareas();
 }
 
 function showHome() {
-  updateCurrentFromInputs();
   state.currentId = "";
   els.welcomeView.classList.remove("hidden");
   els.detailView.classList.add("hidden");
@@ -2122,86 +2122,12 @@ function showHome() {
 }
 
 function showLibrary() {
-  updateCurrentFromInputs();
   state.currentId = "";
   els.welcomeView.classList.add("hidden");
   els.detailView.classList.add("hidden");
   els.libraryView.classList.remove("hidden");
   renderLibrary();
   renderEntryList();
-}
-
-function renderLibrary() {
-  const schema = getBankSchema(state.libraryMode);
-  if (!schema[state.libraryBankTab]) state.libraryBankTab = Object.keys(schema)[0];
-  renderLibraryGroups();
-  els.libraryBankTabs.innerHTML = Object.entries(schema)
-    .map(
-      ([key, label]) =>
-        `<button class="note-tab ${key === state.libraryBankTab ? "active" : ""}" data-library-bank="${key}">${label}</button>`,
-    )
-    .join("");
-  renderLibraryContent();
-  $$("[data-library-mode]").forEach((button) =>
-    button.classList.toggle("active", button.dataset.libraryMode === state.libraryMode),
-  );
-}
-
-function renderLibraryGroups() {
-  const groups = state.libraryMode === "task2" ? TASK2_TOPICS : TASK_TYPES.task1;
-  els.libraryGroupLabel.textContent = state.libraryMode === "task2" ? "话题" : "题型";
-  if (state.libraryGroup !== "all" && !groups.includes(state.libraryGroup)) state.libraryGroup = "all";
-  els.libraryGroupSelect.innerHTML = `<option value="all">全部${state.libraryMode === "task2" ? "话题" : "题型"}</option>${groups
-    .map((group) => `<option value="${group}">${group}</option>`)
-    .join("")}`;
-  els.libraryGroupSelect.value = state.libraryGroup;
-}
-
-function renderLibraryContent() {
-  const entries = state.entries.filter((entry) => {
-    if (entry.mode !== state.libraryMode) return false;
-    if (state.libraryGroup === "all") return true;
-    return state.libraryMode === "task2" ? entry.topic === state.libraryGroup : entry.essayType === state.libraryGroup;
-  });
-  const allCards = entries
-    .map((entry) => {
-      const content = (entry.bank[state.libraryBankTab] || "").trim();
-      if (!content) return null;
-      return {
-        group: state.libraryMode === "task2" ? entry.topic : entry.essayType,
-        title: entry.title || "未命名复盘",
-        date: entry.practiceDate || "未记录日期",
-        content,
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => getDateTime(b.date) - getDateTime(a.date));
-
-  const pageCount = Math.max(1, Math.ceil(allCards.length / LIBRARY_PAGE_SIZE));
-  state.libraryPage = Math.min(state.libraryPage, pageCount);
-  const pageCards = allCards.slice((state.libraryPage - 1) * LIBRARY_PAGE_SIZE, state.libraryPage * LIBRARY_PAGE_SIZE);
-  const html = pageCards
-    .map(
-      (card) => `
-        <article class="library-card">
-          <div class="library-card-head">
-            <div class="library-card-title">
-              <strong>${escapeHtml(card.title)}</strong>
-              <span class="library-tag ${getLibraryTagTone(card.group)}">${escapeHtml(card.group || "未分类")}</span>
-            </div>
-            <span class="library-date">${escapeHtml(card.date)}</span>
-          </div>
-          <pre>${escapeHtml(htmlToText(card.content))}</pre>
-        </article>
-      `,
-    )
-    .join("");
-  els.libraryContent.innerHTML = html ? `<div class="library-card-grid">${html}</div>` : `<div class="empty-library">这里还没有可复习的素材。</div>`;
-  renderLibraryPagination(pageCount, allCards.length);
-}
-
-function getLibraryTagTone(group) {
-  return getTagTone(state.libraryMode, group);
 }
 
 function getTagTone(mode, group) {
@@ -2225,29 +2151,19 @@ function renderTaskImage(entry) {
   els.taskImagePreview.classList.toggle("empty", !entry.taskImage);
   els.taskImagePreview.disabled = !entry.taskImage;
   els.removeTaskImageBtn.classList.toggle("hidden", !entry.taskImage);
-  els.taskImagePreview.innerHTML = entry.taskImage ? `<img src="${entry.taskImage}" alt="题目图片预览" />` : "暂无图片";
+  if (entry.taskImage) {
+    const image = document.createElement("img");
+    image.src = entry.taskImage;
+    image.alt = "题目图片预览";
+    els.taskImagePreview.replaceChildren(image);
+  } else {
+    els.taskImagePreview.textContent = "暂无图片";
+  }
 }
 
 function getBankSchema(mode) {
-  const defaults = BANK_SCHEMAS[mode] || BANK_SCHEMAS.task2;
-  return { ...defaults, ...(state.bankLabels[mode] || {}) };
+  return { ...BANK_SCHEMAS.task1, ...BANK_SCHEMAS.task2, ...state.bankLabels[mode] };
 }
-
-function renderBankTabs(mode) {
-  const schema = getBankSchema(mode);
-  if (!schema[state.bankTab]) state.bankTab = Object.keys(schema)[0];
-  const tabs = Object.entries(schema)
-    .map(
-      ([key, label]) =>
-        `<button class="note-tab ${key === state.bankTab ? "active" : ""}" data-bank="${key}">${label}</button>`,
-    )
-    .join("");
-  els.detailBankTabs.innerHTML = tabs;
-  els.bankText.innerHTML = toRichHtml(currentEntry()?.bank[state.bankTab] || "");
-  renderBankLabelEditor(mode);
-}
-
-/* ---------------- 渲染：评语模块 ---------------- */
 
 function renderEvaluation(entry) {
   els.evaluationList.innerHTML = "";
@@ -2256,7 +2172,7 @@ function renderEvaluation(entry) {
     const node = els.evalSectionTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.index = index;
     node.querySelector(".eval-section-title").value = section.title || "";
-    node.querySelector(".eval-section-body").innerHTML = toRichHtml(section.body || "");
+    node.querySelector(".eval-section-body").innerHTML = safeMaterialHtml(toRichHtml(section.body || ""));
     els.evaluationList.appendChild(node);
     // 评语正文：默认一行，随内容自动增高
     scheduleGrow(node.querySelector(".eval-section-body"), 40);
@@ -2270,18 +2186,6 @@ function addEvaluationSection(title = "") {
   entry.evaluation.push({ title, body: "" });
   persist();
   renderEvaluation(entry);
-}
-
-function readEvaluationFromDOM() {
-  const entry = currentEntry();
-  if (!entry) return;
-  const sections = [];
-  els.evaluationList.querySelectorAll(".eval-section").forEach((node) => {
-    const title = node.querySelector(".eval-section-title").value.trim();
-    const body = cleanEditorHtml(node.querySelector(".eval-section-body").innerHTML);
-    sections.push({ title, body });
-  });
-  entry.evaluation = sections;
 }
 
 /* ---------------- 渲染：错误标注（筛选 + 自适应高度） ---------------- */
@@ -2341,7 +2245,7 @@ function renderCorrections() {
 
   if (!entry) return;
 
-  if (!entry.corrections.length) {
+  if (!entry.corrections?.length) {
     els.correctionList.innerHTML = `<div class="empty-corrections">还没有错误标注。点击「添加」，或用鼠标选中作文里的文字快速加入。</div>`;
     return;
   }
@@ -2356,9 +2260,9 @@ function renderCorrections() {
     node.dataset.index = index;
     node.dataset.kind = correction.kind;
     node.classList.add(`kind-${correction.kind}`);
-    node.querySelector('[data-correction="source"]').innerHTML = toRichHtml(correction.source || "");
-    node.querySelector('[data-correction="fix"]').innerHTML = toRichHtml(correction.fix || "");
-    node.querySelector('[data-correction="comment"]').innerHTML = toRichHtml(correction.comment || "");
+    node.querySelector('[data-correction="source"]').innerHTML = safeMaterialHtml(toRichHtml(correction.source || ""));
+    node.querySelector('[data-correction="fix"]').innerHTML = safeMaterialHtml(toRichHtml(correction.fix || ""));
+    node.querySelector('[data-correction="comment"]').innerHTML = safeMaterialHtml(toRichHtml(correction.comment || ""));
     const kindSelect = node.querySelector('[data-correction="kind"]');
     kindSelect.innerHTML = CORRECTION_KINDS.map((item) => `<option value="${item.kind}">${item.kind}</option>`).join("");
     kindSelect.value = correction.kind;
@@ -2383,40 +2287,9 @@ function renderHighlightLegend() {
   ).join("");
 }
 
-function renderBankLabelEditor(mode) {
-  const tabs = els.detailBankTabs;
-  els.bankLabelEditor.classList.toggle("hidden", !state.editingBankLabels);
-  tabs.classList.toggle("hidden", state.editingBankLabels);
-  els.editBankLabelsBtn.textContent = state.editingBankLabels ? "取消编辑" : "编辑标签";
-  if (!state.editingBankLabels) {
-    els.bankLabelEditor.innerHTML = "";
-    return;
-  }
-  // 编辑时不显示标签 tab，避免框里框外重复
-  const schema = getBankSchema(mode);
-  const inputs = Object.entries(schema)
-    .map(
-      ([key, label]) => `
-        <label>
-          <span>${escapeHtml(BANK_SCHEMAS[mode][key] || key)}</span>
-          <input data-bank-label="${key}" value="${escapeHtml(label)}" />
-        </label>
-      `,
-    )
-    .join("");
-  els.bankLabelEditor.innerHTML = `
-    <div class="bank-label-fields">${inputs}</div>
-    <div class="bank-label-actions">
-      <button class="secondary-button" data-bank-label-reset type="button">恢复默认</button>
-      <button class="primary-button" data-bank-label-save type="button">保存标签</button>
-    </div>
-  `;
-}
-
 function renderBankSubmenu() {
-  const schema = getBankSchema(currentEntry()?.mode || state.mode);
-  els.bankSubmenu.innerHTML = Object.entries(schema)
-    .map(([key, label]) => `<button data-add-bank="${key}">${label}</button>`)
+  els.bankSubmenu.innerHTML = Object.entries(MATERIAL_TYPES)
+    .map(([key, { label }]) => `<button type="button" data-add-bank="${key}">${label}</button>`)
     .join("");
 }
 
@@ -2432,30 +2305,37 @@ function renderAll() {
 
 /* ---------------- 表单读取 ---------------- */
 
-function updateCurrentFromInputs() {
+function saveEntryField(field) {
   const entry = currentEntry();
-  if (!entry) return;
-
-  entry.title = els.entryTitle.value;
-  entry.prompt = cleanEditorHtml(els.promptText.innerHTML);
-  entry.essayType = els.essayType.value;
-  entry.practiceDate = els.practiceDate.value;
-  entry.source = els.entrySource.value.trim();
-  entry.topic = entry.mode === "task2" ? els.topicSelect.value : "";
-  entry.taskImage = entry.mode === "task1" ? entry.taskImage || "" : "";
-  entry.draftHtml = cleanEditorHtml(els.draftEditor.innerHTML);
-  entry.modelHtml = cleanEditorHtml(els.modelEditor.innerHTML);
-  entry.draftScore = els.draftScore.value;
-  entry.modelScore = els.modelScore.value;
-  SCORE_DIMENSIONS.forEach((dim) => {
-    const key = dim.key.toUpperCase();
-    entry.draftScores[dim.key] = els[`draftScore${key}`].value;
-    entry.modelScores[dim.key] = els[`modelScore${key}`].value;
-    entry.draftReasons[dim.key] = els[`draftReason${key}`].value.trim();
-  });
-  entry.bank[state.bankTab] = cleanEditorHtml(els.bankText.innerHTML);
-  readEvaluationFromDOM();
-  entry.thinking = cleanEditorHtml(els.thinkingText.innerHTML);
+  if (!entry || !field) return;
+  const richFields = {
+    promptText: "prompt", draftEditor: "draftHtml", modelEditor: "modelHtml", thinkingText: "thinking",
+  };
+  const inputFields = {
+    entryTitle: "title", essayType: "essayType", practiceDate: "practiceDate", entrySource: "source",
+    topicSelect: "topic", draftScore: "draftScore", modelScore: "modelScore",
+  };
+  if (Object.hasOwn(richFields, field.id)) {
+    entry[richFields[field.id]] = safeMaterialHtml(field.innerHTML);
+  } else if (Object.hasOwn(inputFields, field.id)) {
+    entry[inputFields[field.id]] = field.id === "entrySource" ? field.value.trim() : field.value;
+  } else {
+    const score = field.id.match(/^(draftScore|modelScore|draftReason)(TR|CC|LR|GRA)$/);
+    if (score) {
+      const values = entry[`${score[1]}s`] ||= {};
+      values[score[2].toLowerCase()] = field.value.trim();
+    }
+    const section = field.closest(".eval-section");
+    if (section) {
+      const item = entry.evaluation[Number(section.dataset.index)];
+      if (field.matches(".eval-section-title")) item.title = field.value.trim();
+      if (field.matches(".eval-section-body")) item.body = safeMaterialHtml(field.innerHTML);
+    }
+    const correction = field.closest(".correction-item");
+    if (correction && field.matches(".rich-field[data-correction]")) {
+      entry.corrections[Number(correction.dataset.index)][field.dataset.correction] = safeMaterialHtml(field.innerHTML);
+    }
+  }
 }
 
 function updateStats() {
@@ -2474,21 +2354,16 @@ function bindEvents() {
   // —— 文件同步 ——
   els.openFileBtn.addEventListener("click", bindDataFile);
   els.createFileBtn.addEventListener("click", createDataFile);
+  $("#downloadBackupBtn").addEventListener("click", downloadBackup);
   els.fileOpenInput.addEventListener("change", async () => {
     const file = els.fileOpenInput.files[0];
     els.fileOpenInput.value = "";
-    if (!file) return;
-    const text = await file.text();
-    await adoptFile(null, text, false, file.name);
-    if (!hasFSA) {
-      showToast(`已读取「${file.name}」。${fsaReason()} 改动后请点「保存到文件」手动导出。`, "error");
-    }
+    if (file) await adoptFile(null, await file.text(), false, file.name);
   });
 
   els.saveFileBtn.addEventListener("click", async () => {
-    // 手动同步：把当前数据写入「打开/绑定」选择的那个文件
     if (!state.fileHandle) {
-      showToast("请先点击「打开/绑定文件」选择要同步的文件", "error");
+      downloadDataFile();
       return;
     }
     const ok = await writeToFile();
@@ -2564,7 +2439,6 @@ function bindEvents() {
   }
 
   $("#newEntryBtn").addEventListener("click", () => {
-    updateCurrentFromInputs();
     const entry = makeEmptyEntry();
     state.entries.unshift(entry);
     state.currentId = entry.id;
@@ -2591,35 +2465,13 @@ function bindEvents() {
     );
     if (!ok) return;
     clearReviewContent(entry);
+    removeEntryMaterials(entry);
     persist();
     renderAll();
     showToast("已清除批改内容（题目与我的版本保留）");
   });
   els.openLibraryBtn.addEventListener("click", showLibrary);
   els.libraryHomeBtn.addEventListener("click", showHome);
-
-  $$("[data-library-mode]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.libraryMode = button.dataset.libraryMode;
-      state.libraryGroup = "all";
-      state.libraryBankTab = "keyNotes";
-      renderLibrary();
-    });
-  });
-
-  els.libraryGroupSelect.addEventListener("change", () => {
-    state.libraryGroup = els.libraryGroupSelect.value;
-    state.libraryPage = 1;
-    renderLibraryContent();
-  });
-
-  els.libraryBankTabs.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-library-bank]");
-    if (!button) return;
-    state.libraryBankTab = button.dataset.libraryBank;
-    state.libraryPage = 1;
-    renderLibrary();
-  });
 
   els.libraryPagination.addEventListener("click", (event) => {
     const button = event.target.closest("[data-library-page]");
@@ -2645,6 +2497,7 @@ function bindEvents() {
     const entry = currentEntry();
     if (!entry) return;
     if (!window.confirm(`确定删除「${entry.title || "未命名复盘"}」吗？`)) return;
+    removeEntryMaterials(entry);
     state.entries = state.entries.filter((item) => item.id !== entry.id);
     state.currentId = "";
     persist();
@@ -2653,7 +2506,6 @@ function bindEvents() {
 
   $$(".mode-tab").forEach((button) => {
     button.addEventListener("click", () => {
-      updateCurrentFromInputs();
       state.mode = button.dataset.mode;
       state.currentId = "";
       persist();
@@ -2668,8 +2520,6 @@ function bindEvents() {
   els.entryList.addEventListener("click", (event) => {
     const card = event.target.closest("[data-entry-id]");
     if (!card) return;
-    updateCurrentFromInputs();
-    persist();
     state.currentId = card.dataset.entryId;
     const entry = currentEntry();
     if (entry) state.mode = entry.mode;
@@ -2678,7 +2528,7 @@ function bindEvents() {
 
   [els.entryTitle, els.promptText, els.essayType, els.practiceDate, els.entrySource, els.topicSelect, els.thinkingText, els.draftReasonTR, els.draftReasonCC, els.draftReasonLR, els.draftReasonGRA].forEach((input) => {
     input.addEventListener("input", () => {
-      updateCurrentFromInputs();
+      saveEntryField(input);
       persist();
       renderEntryList();
       autoResizeTextareas();
@@ -2692,8 +2542,9 @@ function bindEvents() {
   // —— 四维评分 ——
   [els.draftScore, els.modelScore, els.draftScoreTR, els.draftScoreCC, els.draftScoreLR, els.draftScoreGRA, els.modelScoreTR, els.modelScoreCC, els.modelScoreLR, els.modelScoreGRA].forEach((select) => {
     select.addEventListener("change", () => {
-      updateCurrentFromInputs();
+      saveEntryField(select);
       updateScoreAvgs(currentEntry());
+      renderEntryList();
       persist();
     });
   });
@@ -2708,7 +2559,7 @@ function bindEvents() {
       return;
     }
     scoreSelect.value = value;
-    updateCurrentFromInputs();
+    saveEntryField(scoreSelect);
     persist();
     renderAll();
     showToast(`已把四维均分 ${value} 填入总分`);
@@ -2756,7 +2607,7 @@ function bindEvents() {
   // —— 富文本编辑器 ——
   [els.draftEditor, els.modelEditor].forEach((editor) => {
     editor.addEventListener("input", () => {
-      updateCurrentFromInputs();
+      saveEntryField(editor);
       updateStats();
       persist();
     });
@@ -2767,20 +2618,20 @@ function bindEvents() {
   // 所有富文本框统一处理：粘贴纯文本、点击高亮弹出清除浮层
   document.addEventListener("paste", (event) => {
     const field = event.target.closest?.(".rich-field, .rich-editor");
-    if (!field) return;
+    if (!field || event.defaultPrevented) return;
     event.preventDefault();
     const text = event.clipboardData?.getData("text/plain") || "";
     if (!text) return;
     insertPlainText(field, text);
     if (field.classList.contains("rich-editor")) updateStats();
-    updateCurrentFromInputs();
+    saveEntryField(field);
     persist();
   });
 
   document.addEventListener("click", (event) => {
     if (event.target.closest("#highlightToolbar")) return;
     const span = event.target.closest?.("[data-highlight]");
-    if (span && span.closest(".rich-field, .rich-editor")) {
+    if (span && span.closest(".rich-field, .rich-editor") && !span.closest("#materialDialog")) {
       showHighlightToolbar(span);
     } else {
       hideHighlightToolbar();
@@ -2791,7 +2642,7 @@ function bindEvents() {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) return;
     const editor = selection.anchorNode?.parentElement?.closest?.(".rich-field, .rich-editor");
-    if (editor) showToolbarForSelection(editor);
+    if (editor && !editor.closest("#materialDialog")) showToolbarForSelection(editor);
   });
 
   document.addEventListener("pointerdown", (event) => {
@@ -2860,11 +2711,6 @@ function bindEvents() {
     if (event.target === els.typingModal) closeTypingModal();
   });
 
-  els.bankText.addEventListener("input", () => {
-    updateCurrentFromInputs();
-    persist();
-  });
-
   // —— 评语模块 ——
   els.addEvalSectionBtn.addEventListener("click", (event) => {
     event.preventDefault();
@@ -2875,7 +2721,7 @@ function bindEvents() {
     const target = event.target.closest(".eval-section-title, .eval-section-body");
     if (!target) return;
     if (target.classList.contains("eval-section-body")) scheduleGrow(target, 40);
-    updateCurrentFromInputs();
+    saveEntryField(target);
     persist();
   });
 
@@ -2890,40 +2736,6 @@ function bindEvents() {
     entry.evaluation.splice(index, 1);
     persist();
     renderEvaluation(entry);
-  });
-
-  els.detailBankTabs.addEventListener("click", (event) => {
-    const button = event.target.closest(".note-tab");
-    if (!button) return;
-    updateCurrentFromInputs();
-    state.bankTab = button.dataset.bank;
-    renderAll();
-  });
-
-  els.editBankLabelsBtn.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    state.editingBankLabels = !state.editingBankLabels;
-    renderBankTabs(currentEntry()?.mode || state.mode);
-  });
-
-  els.bankLabelEditor.addEventListener("click", (event) => {
-    const entry = currentEntry();
-    if (!entry) return;
-    if (event.target.closest("[data-bank-label-reset]")) {
-      state.bankLabels[entry.mode] = { ...BANK_SCHEMAS[entry.mode] };
-      persist();
-      renderAll();
-      return;
-    }
-    if (!event.target.closest("[data-bank-label-save]")) return;
-    els.bankLabelEditor.querySelectorAll("[data-bank-label]").forEach((input) => {
-      const key = input.dataset.bankLabel;
-      state.bankLabels[entry.mode][key] = input.value.trim() || BANK_SCHEMAS[entry.mode][key];
-    });
-    state.editingBankLabels = false;
-    persist();
-    renderAll();
   });
 
   $("#addCorrectionBtn").addEventListener("click", (event) => {
@@ -2946,12 +2758,7 @@ function bindEvents() {
   });
 
   els.correctionList.addEventListener("input", (event) => {
-    const item = event.target.closest(".correction-item");
-    const key = event.target.dataset.correction;
-    if (!item || !key) return;
-    const correction = currentEntry().corrections[Number(item.dataset.index)];
-    if (!correction) return;
-    correction[key] = cleanEditorHtml(event.target.innerHTML);
+    saveEntryField(event.target);
     persist();
   });
 
@@ -2970,11 +2777,16 @@ function bindEvents() {
   });
 
   els.correctionList.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-remove-correction]");
-    if (!button) return;
+    const button = event.target.closest("[data-remove-correction], [data-save-correction-material]");
+    const entry = currentEntry();
+    if (!button || !entry) return;
+    const index = Number(button.closest(".correction-item").dataset.index);
+    if (button.hasAttribute("data-save-correction-material")) {
+      openMaterialFromCorrection(entry.corrections[index], entry);
+      return;
+    }
     if (!window.confirm("确定删除这条错误标注吗？")) return;
-    const item = event.target.closest(".correction-item");
-    currentEntry().corrections.splice(Number(item.dataset.index), 1);
+    entry.corrections.splice(index, 1);
     persist();
     renderCorrections();
     renderMetrics();
@@ -3083,7 +2895,7 @@ function applyInlineFormat(command) {
   if (!state.selectedEditor) return;
   const ok = document.execCommand(command, false, null);
   if (ok) {
-    updateCurrentFromInputs();
+    saveEntryField(state.selectedEditor);
     persist();
   }
   hideToolbar();
@@ -3114,7 +2926,7 @@ function applyHighlight(color) {
   }
   editor.normalize();
   selection.removeAllRanges();
-  updateCurrentFromInputs();
+  saveEntryField(editor);
   persist();
   hideToolbar();
 }
@@ -3142,12 +2954,12 @@ function hideHighlightToolbar() {
 function clearHighlightAt() {
   const span = state.highlightTarget;
   if (!span || !span.isConnected) return;
-  const editor = span.closest(".rich-editor");
+  const editor = span.closest(".rich-editor, .rich-field");
   const parent = span.parentNode;
   while (span.firstChild) parent.insertBefore(span.firstChild, span);
   parent.removeChild(span);
   if (editor) editor.normalize();
-  updateCurrentFromInputs();
+  saveEntryField(editor);
   persist();
   hideHighlightToolbar();
 }
@@ -3167,14 +2979,12 @@ function addSelectionToCorrection(field) {
   closeToolbarFully();
 }
 
-function addSelectionToBank(target) {
+function addSelectionToBank(category) {
   const entry = currentEntry();
   if (!entry || !state.selectedText) return;
-  entry.bank[target] = appendLine(entry.bank[target], textToHtml(state.selectedText));
-  state.bankTab = target;
-  persist();
-  renderAll();
+  const contentHtml = textToHtml(state.selectedText);
   closeToolbarFully();
+  openMaterialEditor({ category, sourceEntryId: entry.id, sourceField: "selection", contentHtml });
 }
 
 function closeToolbarFully() {
@@ -3228,6 +3038,7 @@ function init() {
   applyTheme(state.theme);
   applyFontScale(state.fontScale);
   bindEvents();
+  bindMaterialEvents();
   renderThemeSwatches();
   renderFontSizeOptions();
   // 加粗/斜体用 <b>/<i> 标签而非内联样式，便于清洗与存储
@@ -3259,7 +3070,6 @@ function init() {
     els.modelScoreCC,
     els.modelScoreLR,
     els.modelScoreGRA,
-    els.libraryGroupSelect,
     els.typingEntrySelect,
   ].forEach(enhanceSelect);
 
@@ -3273,6 +3083,8 @@ function init() {
   restoreFileBinding().then((restored) => {
     if (!restored) {
       loadLocalEntries();
+      applyTheme(state.theme);
+      applyFontScale(state.fontScale);
       renderAll();
       renderSyncStatus();
       regrowCorrectionTextareas();

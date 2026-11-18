@@ -1006,10 +1006,6 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
   box-shadow: var(--shadow);
 }
 
-.library-mode-tabs {
-  margin: 0;
-}
-
 .library-bank-tabs {
   margin: 0;
   box-shadow: var(--shadow);
@@ -1018,6 +1014,145 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
 .library-content {
   display: grid;
   gap: 18px;
+}
+
+.material-filters {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+  align-items: end;
+}
+
+.material-search {
+  grid-column: 1 / -1;
+}
+
+.material-favorite-filter,
+.material-result-count {
+  align-self: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.material-favorite-filter {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.detail-materials {
+  display: grid;
+  gap: 10px;
+  padding: 0 14px 14px;
+  max-height: 480px;
+  overflow-y: auto;
+  align-content: start;
+}
+
+.material-card {
+  align-content: start;
+  min-width: 0;
+  gap: 8px;
+}
+
+.detail-materials .material-card {
+  padding: 12px;
+  box-shadow: none;
+}
+
+.material-copy,
+.material-detail {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.material-copy > p {
+  margin-block: 0 0.4em;
+}
+
+.material-copy > :last-child {
+  margin-bottom: 0;
+}
+
+.material-detail,
+.material-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.material-meta,
+.material-actions,
+.correction-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.material-tag {
+  border-radius: 6px;
+  padding: 2px 6px;
+  background: var(--soft);
+}
+
+.material-source {
+  justify-self: start;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.material-source:hover {
+  text-decoration: underline;
+}
+
+.material-actions > select {
+  width: auto;
+  margin-inline-start: auto;
+}
+
+.material-dialog {
+  box-sizing: border-box;
+  width: min(620px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.material-dialog::backdrop {
+  background: rgb(0 0 0 / 42%);
+}
+
+.material-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+.material-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.material-wide {
+  grid-column: 1 / -1;
+}
+
+#materialBody {
+  min-height: 84px;
+  max-height: 32vh;
+  overflow: auto;
+}
+
+.material-error {
+  color: var(--red);
 }
 
 .library-card-grid {
@@ -1034,25 +1169,6 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
   border-radius: 8px;
   background: var(--panel);
   box-shadow: var(--shadow);
-}
-
-.library-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.library-card-title {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-}
-
-.library-card-title strong {
-  min-width: 0;
 }
 
 .library-tag {
@@ -1125,22 +1241,6 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
 .tag-tone-11 {
   background: #f8e8b8;
   color: #866416;
-}
-
-.library-date {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.library-card pre {
-  max-height: 190px;
-  overflow: auto;
-  margin: 0;
-  color: var(--ink);
-  font: inherit;
-  line-height: 1.65;
-  white-space: pre-wrap;
 }
 
 .library-pagination {
@@ -1482,40 +1582,6 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* ---------------- 素材沉淀 ---------------- */
 
-.bank-label-editor {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.bank-label-fields {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.bank-label-fields label {
-  display: grid;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.bank-label-fields input {
-  min-height: 34px;
-  padding: 6px 9px;
-  font-size: 13px;
-}
-
-.bank-label-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 .legend-item {
   display: grid;
   grid-template-columns: 16px minmax(110px, 160px);
@@ -1756,7 +1822,7 @@ summary strong {
 
 .correction-item {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 1.2fr) 150px auto;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(115px, 0.6fr);
   gap: 12px;
   align-items: start;
   padding: 12px;
@@ -1799,6 +1865,11 @@ summary strong {
   gap: 7px;
 }
 
+.correction-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+
 .correction-item label:nth-child(4),
 .correction-item .remove-button {
   align-self: start;
@@ -1825,17 +1896,6 @@ summary strong {
   height: auto;
 }
 
-.notes-textarea {
-  height: 405px;
-  min-height: 405px;
-  max-height: 405px;
-  border: 0;
-  border-top: 1px solid var(--line);
-  border-radius: 0 0 8px 8px;
-  resize: none;
-  overflow: auto;
-}
-
 .analysis-fields {
   display: grid;
   gap: 10px;
@@ -1843,7 +1903,6 @@ summary strong {
   align-content: start;
 }
 
-/* 与素材沉淀的 notes-textarea 同高，面板拉伸后底部边框对齐 */
 .analysis-fields .rich-field {
   height: 405px;
   min-height: 405px;
@@ -2018,7 +2077,7 @@ summary strong {
 /* ---------------- 响应式 ---------------- */
 
 @media (max-width: 1120px) {
-  .library-control-panel,
+  .library-control-panel:not(.material-filters),
   .library-card-grid,
   .workflow-strip,
   .prompt-card,
@@ -2103,9 +2162,6 @@ summary strong {
     margin-top: 0;
   }
 
-  .bank-label-fields {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ---------------- 批改结果导入弹窗 ---------------- */

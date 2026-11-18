@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=23" />
+    <link rel="stylesheet" href="styles.css?v=27" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -66,6 +66,7 @@
                 <button class="secondary-button" id="openFileBtn" type="button">打开/绑定文件</button>
                 <button class="secondary-button" id="createFileBtn" type="button">新建数据文件</button>
                 <button class="secondary-button sync-save-full" id="saveFileBtn" type="button">保存到文件</button>
+                <button class="secondary-button sync-save-full" id="downloadBackupBtn" type="button">导出备份</button>
               </div>
               <label class="sync-toggle">
                 <input type="checkbox" id="autoSaveToggle" />
@@ -129,21 +130,23 @@
               <p class="eyebrow">Review Bank</p>
               <h2 class="library-title">素材库复习</h2>
             </div>
-            <button class="secondary-button" id="libraryHomeBtn">返回首页</button>
+            <div class="topbar-actions">
+              <button class="primary-button" id="addLibraryMaterial" type="button">添加素材</button>
+              <button class="secondary-button" id="libraryHomeBtn">返回首页</button>
+            </div>
           </header>
 
-          <section class="library-control-panel">
-            <div class="mode-tabs library-mode-tabs" role="tablist" aria-label="素材库类型">
-              <button class="mode-tab active" data-library-mode="task2">大作文</button>
-              <button class="mode-tab" data-library-mode="task1">小作文</button>
-            </div>
-            <label class="field">
-              <span id="libraryGroupLabel">话题</span>
-              <select id="libraryGroupSelect"></select>
-            </label>
-          </section>
-
           <div class="library-bank-tabs note-tabs" id="libraryBankTabs" role="tablist" aria-label="素材库分类"></div>
+          <section class="library-control-panel material-filters" id="libraryFilters" aria-label="素材筛选">
+            <label class="field material-search"><span>全局搜索</span><input id="librarySearch" type="search" placeholder="英文、中文、标签或备注" /></label>
+            <label class="field"><span>作文类型</span><select id="libraryTask"><option value="">全部</option><option value="task1">Task 1</option><option value="task2">Task 2</option></select></label>
+            <label class="field"><span>话题 / 题型</span><select id="libraryTopic"></select></label>
+            <label class="field"><span>素材类型</span><select id="librarySubtype"></select></label>
+            <label class="field"><span>来源作文</span><select id="librarySource"></select></label>
+            <label class="field"><span>复习状态</span><select id="libraryReview"><option value="">全部状态</option><option value="new">未复习</option><option value="mastered">已掌握</option><option value="revisit">需要复习</option></select></label>
+            <label class="material-favorite-filter"><input id="libraryFavorites" type="checkbox" /> 仅看收藏</label>
+            <span class="material-result-count" id="libraryResultCount" aria-live="polite"></span>
+          </section>
           <div class="library-content" id="libraryContent"></div>
           <div class="library-pagination" id="libraryPagination"></div>
         </section>
@@ -318,11 +321,10 @@
                     <em class="eyebrow">Language Bank</em>
                     <strong>素材沉淀</strong>
                   </span>
-                  <button class="secondary-button" id="editBankLabelsBtn" type="button">编辑标签</button>
+                  <button class="secondary-button" id="addDetailMaterial" type="button">添加素材</button>
                 </summary>
-                <div class="bank-label-editor hidden" id="bankLabelEditor"></div>
                 <div class="note-tabs" id="detailBankTabs" role="tablist" aria-label="素材分类"></div>
-                <div class="rich-field notes-textarea" id="bankText" contenteditable="true" spellcheck="false"></div>
+                <div class="detail-materials" id="detailMaterials"></div>
               </details>
             </article>
 
@@ -331,8 +333,9 @@
                 <summary>
                   <span>
                     <em class="eyebrow">Thinking</em>
-                    <strong>思路与结构</strong>
+                    <strong>本篇思路与结构</strong>
                   </span>
+                  <button class="secondary-button" id="saveThinkingMaterial" type="button">收藏为写作方法</button>
                 </summary>
                 <div class="analysis-fields">
                   <div class="rich-field" id="thinkingText" contenteditable="true" spellcheck="false" data-placeholder="整体思路、审题要点、结构蓝图、论证技法、实操建议…"></div>
@@ -397,7 +400,10 @@
           <span>问题类型</span>
           <select data-correction="kind"></select>
         </label>
-        <button class="remove-button" data-remove-correction type="button" title="删除此条">×</button>
+        <div class="correction-actions">
+          <button class="secondary-button" data-save-correction-material type="button">收藏到素材库</button>
+          <button class="remove-button" data-remove-correction type="button" title="删除此条">×</button>
+        </div>
       </article>
     </template>
 
@@ -428,7 +434,7 @@
           <strong>粘贴批改结果</strong>
           <button class="icon-button" id="importModalClose" type="button" aria-label="关闭">×</button>
         </div>
-        <p class="import-modal-hint">粘贴 AI 批改输出，自动解析【分数】【评语】【错误】【表达】【范文】【思路】，并替换本篇文章已有的批改内容。</p>
+        <p class="import-modal-hint">粘贴 AI 批改输出，替换本篇批改及批改附带的素材。通过添加或收藏功能保存的素材会保留。</p>
         <textarea id="importText" rows="12" spellcheck="false" placeholder="【分数】&#10;总分：6.5&#10;TR：6 ｜ CC：6.5 ｜ LR：6 ｜ GRA：6.5&#10;&#10;【评语】&#10;亮点：…&#10;短板：…&#10;提升路径：…&#10;&#10;【错误】&#10;[语法] 原句：… ｜ 原因：… ｜ 修改：… ｜ 提升：…"></textarea>
         <div class="import-modal-actions">
           <button class="secondary-button" id="importCancelBtn" type="button">取消</button>
@@ -463,6 +469,28 @@
 
     <input type="file" id="fileOpenInput" accept="application/json,.json" class="hidden" aria-hidden="true" tabindex="-1" />
 
-    <script src="app.js?v=26"></script>
+    <dialog class="material-dialog" id="materialDialog" aria-labelledby="materialEditorTitle">
+      <form id="materialForm">
+        <h2 id="materialEditorTitle">添加素材</h2>
+        <div class="material-editor-fields">
+          <label class="field"><span>分类</span><select id="materialCategory"><option value="expression">表达素材</option><option value="idea">观点与内容</option><option value="strategy">写作方法</option></select></label>
+          <label class="field"><span>类型</span><select id="materialSubtype"></select></label>
+          <label class="field material-wide"><span>来源作文</span><select id="materialSource" required></select></label>
+          <div class="field material-wide"><span id="materialBodyLabel">素材内容</span><div class="rich-field" id="materialBody" contenteditable="true" role="textbox" aria-labelledby="materialBodyLabel" aria-multiline="true" spellcheck="false"></div></div>
+          <label class="field"><span>中文释义</span><textarea id="materialTranslation" rows="2"></textarea></label>
+          <label class="field"><span>使用场景</span><textarea id="materialContext" rows="2"></textarea></label>
+          <label class="field"><span>个人备注</span><textarea id="materialNote" rows="2"></textarea></label>
+          <label class="field"><span>标签（逗号分隔）</span><input id="materialTags" /></label>
+        </div>
+        <p id="materialError" class="material-error" role="alert" hidden></p>
+        <div class="import-modal-actions">
+          <button class="secondary-button" id="materialCancel" type="button">取消</button>
+          <button class="primary-button" type="submit">保存素材</button>
+        </div>
+      </form>
+    </dialog>
+    <script src="materials.js?v=27"></script>
+    <script src="material-ui.js?v=27"></script>
+    <script src="app.js?v=27"></script>
   </body>
 </html>
