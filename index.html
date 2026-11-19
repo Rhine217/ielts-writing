@@ -11,30 +11,36 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=27" />
+    <link rel="stylesheet" href="styles.css?v=28" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
-      <aside class="sidebar" aria-label="作文目录">
+      <header class="mobile-toolbar">
+        <button class="secondary-button" id="mobileMenuBtn" aria-controls="essaySidebar" aria-expanded="false" type="button">作文目录</button>
+        <span>IELTS Writing</span>
+        <button class="secondary-button" id="mobileLibraryBtn" type="button">素材库</button>
+      </header>
+      <div class="drawer-scrim" id="drawerScrim" hidden></div>
+      <aside class="sidebar" id="essaySidebar" aria-label="作文目录">
         <div class="brand">
           <div class="brand-copy">
             <p class="eyebrow">IELTS</p>
             <h1>Writing Review</h1>
           </div>
           <div class="brand-actions">
-            <button class="icon-button theme-pop-btn" id="themeToggleBtn" title="切换主题" aria-label="切换主题" style="font-size:17px">🎨</button>
+            <button class="icon-button theme-pop-btn" id="themeToggleBtn" title="切换主题" aria-label="切换主题" type="button"><span class="theme-icon" aria-hidden="true"></span></button>
             <button class="icon-button" id="fontSizeBtn" title="调整字号" aria-label="调整字号">
               <span class="aa-icon" aria-hidden="true"><b>A</b><small>A</small></span>
             </button>
-            <button class="icon-button" id="newEntryBtn" title="新建复盘" aria-label="新建复盘">+</button>
             <button class="collapse-button" id="collapseBtn" title="收起目录" aria-label="收起目录">‹</button>
+            <button class="icon-button drawer-close" id="drawerClose" aria-label="关闭目录" title="关闭目录" type="button">×</button>
           </div>
         </div>
 
         <div class="sidebar-content">
           <div class="mode-tabs" role="tablist" aria-label="作文类型">
-            <button class="mode-tab active" data-mode="task2">大作文</button>
-            <button class="mode-tab" data-mode="task1">小作文</button>
+            <button class="mode-tab active" data-mode="task2" role="tab" aria-selected="true">Task 2 · 大作文</button>
+            <button class="mode-tab" data-mode="task1" role="tab" aria-selected="false">Task 1 · 小作文</button>
           </div>
 
           <div class="filter-grid">
@@ -53,41 +59,27 @@
             <input id="entrySearch" type="search" placeholder="标题 / 话题 / 题目" />
           </label>
 
-          <div class="entry-list" id="entryList"></div>
+          <div class="entry-list" id="entryList" aria-label="作文列表"></div>
 
           <div class="sidebar-footer">
-            <div class="sync-panel">
-              <div class="footer-heading">
-                数据文件同步
-                <span class="sync-badge" id="syncBadge">本地</span>
-              </div>
-              <p class="sync-status" id="syncStatus">未绑定文件 · 数据保存在浏览器本地</p>
-              <div class="sync-actions">
-                <button class="secondary-button" id="openFileBtn" type="button">打开/绑定文件</button>
-                <button class="secondary-button" id="createFileBtn" type="button">新建数据文件</button>
-                <button class="secondary-button sync-save-full" id="saveFileBtn" type="button">保存到文件</button>
-                <button class="secondary-button sync-save-full" id="downloadBackupBtn" type="button">导出备份</button>
-              </div>
-              <label class="sync-toggle">
-                <input type="checkbox" id="autoSaveToggle" />
-                <span>修改后自动保存到文件</span>
-              </label>
-            </div>
-
-            <button class="library-entry-button" id="openLibraryBtn">素材库复习</button>
+            <button class="primary-button" id="newEntryBtn" type="button">新建复盘</button>
+            <button class="secondary-button" id="openLibraryBtn" type="button">素材库复习</button>
+            <button class="secondary-button" id="dataToolsBtn" type="button">数据文件与备份</button>
           </div>
         </div>
       </aside>
 
-      <main class="workspace">
+      <main class="workspace" id="workspace" aria-busy="true" inert>
+        <p class="startup-status" id="startupStatus" role="status">正在读取复盘数据…</p>
         <section class="welcome-view" id="welcomeView">
           <div class="welcome-head">
             <div class="welcome-copy">
-              <p class="eyebrow">Dashboard</p>
-              <h2>今天先复盘哪一篇？</h2>
-              <p>
-                这里会把写作练习拆成题目、原文、批改、范文、素材和思路。先从左侧选择一篇文章，或者新建一篇练习。
-              </p>
+              <h2 class="page-title">写作复盘</h2>
+              <p>查看练习进度，继续复盘作文。</p>
+            </div>
+            <div class="topbar-actions">
+              <button class="primary-button" id="homeNewEntryBtn" type="button">新建复盘</button>
+              <button class="secondary-button" id="homeDataToolsBtn" type="button">导入 / 导出 JSON</button>
             </div>
           </div>
 
@@ -108,27 +100,13 @@
             <div class="rich-field summary-editor hidden" id="summaryEditor" contenteditable="true" spellcheck="false"></div>
           </section>
 
-          <div class="workflow-strip">
-            <div>
-              <strong>1. 粘贴作文</strong>
-              <span>保存原题、练习日期和标签。</span>
-            </div>
-            <div>
-              <strong>2. 整理批改</strong>
-              <span>把原句、修改版本、错误类型和个人批注整理清楚。</span>
-            </div>
-            <div>
-              <strong>3. 人工整理</strong>
-              <span>用高亮和快捷收纳，把真正有用的表达沉淀下来。</span>
-            </div>
-          </div>
         </section>
 
         <section class="library-view hidden" id="libraryView">
           <header class="topbar">
             <div>
-              <p class="eyebrow">Review Bank</p>
-              <h2 class="library-title">素材库复习</h2>
+              <h2 class="page-title library-title">素材库复习</h2>
+              <p class="page-meta" id="libraryTotal"></p>
             </div>
             <div class="topbar-actions">
               <button class="primary-button" id="addLibraryMaterial" type="button">添加素材</button>
@@ -136,17 +114,27 @@
             </div>
           </header>
 
-          <div class="library-bank-tabs note-tabs" id="libraryBankTabs" role="tablist" aria-label="素材库分类"></div>
-          <section class="library-control-panel material-filters" id="libraryFilters" aria-label="素材筛选">
-            <label class="field material-search"><span>全局搜索</span><input id="librarySearch" type="search" placeholder="英文、中文、标签或备注" /></label>
+          <div class="library-controls">
+            <label class="field material-search"><span class="sr-only">搜索素材</span><input id="librarySearch" type="search" placeholder="搜索英文、中文、标签或备注" /></label>
+            <div class="library-bank-tabs note-tabs" id="libraryBankTabs" role="tablist" aria-label="素材库分类"></div>
+            <details class="material-filter-disclosure" id="libraryFilterDisclosure">
+              <summary><span>筛选 <span class="filter-active-count" id="libraryFilterCount" hidden></span></span></summary>
+              <section class="material-filters" id="libraryFilters" aria-label="素材筛选">
             <label class="field"><span>作文类型</span><select id="libraryTask"><option value="">全部</option><option value="task1">Task 1</option><option value="task2">Task 2</option></select></label>
             <label class="field"><span>话题 / 题型</span><select id="libraryTopic"></select></label>
             <label class="field"><span>素材类型</span><select id="librarySubtype"></select></label>
             <label class="field"><span>来源作文</span><select id="librarySource"></select></label>
             <label class="field"><span>复习状态</span><select id="libraryReview"><option value="">全部状态</option><option value="new">未复习</option><option value="mastered">已掌握</option><option value="revisit">需要复习</option></select></label>
+            <label class="field"><span>个人标签</span><select id="libraryTag"></select></label>
             <label class="material-favorite-filter"><input id="libraryFavorites" type="checkbox" /> 仅看收藏</label>
-            <span class="material-result-count" id="libraryResultCount" aria-live="polite"></span>
-          </section>
+              </section>
+            </details>
+            <div class="library-results-bar">
+              <span class="material-result-count" id="libraryResultCount" role="status"></span>
+              <div class="active-filters" id="libraryActiveFilters"></div>
+              <button class="text-button" id="clearLibraryFilters" type="button" disabled>重置筛选</button>
+            </div>
+          </div>
           <div class="library-content" id="libraryContent"></div>
           <div class="library-pagination" id="libraryPagination"></div>
         </section>
@@ -158,11 +146,16 @@
               <input id="entryTitle" class="title-input" aria-label="作文标题" />
             </div>
             <div class="topbar-actions">
-              <button class="secondary-button" id="importEntryBtn" type="button">导入批改</button>
-              <button class="secondary-button" id="clearReviewBtn" type="button" title="清除批改结果，保留题目与我的版本">清除批改</button>
+              <button class="primary-button" id="importEntryBtn" type="button">导入批改</button>
               <button class="secondary-button" id="exportEntryBtn" type="button">导出复盘</button>
               <button class="secondary-button" id="backHomeBtn">首页</button>
-              <button class="remove-button" id="deleteEntryBtn">删除记录</button>
+              <details class="entry-actions-menu" id="entryMoreMenu">
+                <summary class="secondary-button">更多</summary>
+                <div class="entry-actions-popover">
+                  <button class="secondary-button" id="clearReviewBtn" type="button" title="清除批改结果，保留题目与我的版本">清除批改</button>
+                  <button class="remove-button" id="deleteEntryBtn" type="button">删除记录</button>
+                </div>
+              </details>
             </div>
           </header>
 
@@ -428,26 +421,27 @@
     </div>
 
     <!-- 批改结果导入弹窗 -->
-    <div class="import-modal hidden" id="importModal" aria-label="导入批改结果">
+    <dialog class="app-dialog import-modal" id="importModal" aria-labelledby="importTitle">
       <div class="import-modal-box">
         <div class="import-modal-head">
-          <strong>粘贴批改结果</strong>
+          <h2 id="importTitle">导入批改</h2>
           <button class="icon-button" id="importModalClose" type="button" aria-label="关闭">×</button>
         </div>
         <p class="import-modal-hint">粘贴 AI 批改输出，替换本篇批改及批改附带的素材。通过添加或收藏功能保存的素材会保留。</p>
         <textarea id="importText" rows="12" spellcheck="false" placeholder="【分数】&#10;总分：6.5&#10;TR：6 ｜ CC：6.5 ｜ LR：6 ｜ GRA：6.5&#10;&#10;【评语】&#10;亮点：…&#10;短板：…&#10;提升路径：…&#10;&#10;【错误】&#10;[语法] 原句：… ｜ 原因：… ｜ 修改：… ｜ 提升：…"></textarea>
+        <p class="material-error" id="importError" role="alert" hidden></p>
         <div class="import-modal-actions">
           <button class="secondary-button" id="importCancelBtn" type="button">取消</button>
           <button class="primary-button" id="importConfirmBtn" type="button">解析并替换</button>
         </div>
       </div>
-    </div>
+    </dialog>
 
     <!-- 打字练习弹窗 -->
-    <div class="typing-modal hidden" id="typingModal" aria-label="打字练习">
+    <dialog class="app-dialog typing-modal" id="typingModal" aria-labelledby="typingTitle">
       <div class="typing-modal-box">
         <div class="typing-modal-head">
-          <strong>打字练习</strong>
+          <h2 id="typingTitle">打字练习</h2>
           <div class="typing-select-wrap">
             <select id="typingEntrySelect" title="选择要练习的范文"></select>
           </div>
@@ -465,17 +459,40 @@
           <button class="secondary-button" id="typingRestartBtn" type="button">重新开始</button>
         </div>
       </div>
-    </div>
+    </dialog>
 
     <input type="file" id="fileOpenInput" accept="application/json,.json" class="hidden" aria-hidden="true" tabindex="-1" />
 
-    <dialog class="material-dialog" id="materialDialog" aria-labelledby="materialEditorTitle">
+    <dialog class="app-dialog data-dialog" id="dataToolsDialog" aria-labelledby="dataToolsTitle">
+      <div class="dialog-heading">
+        <h2 id="dataToolsTitle">数据文件与备份</h2>
+        <button class="icon-button" id="dataToolsClose" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="sync-info">
+        <span class="sync-badge" id="syncBadge">本地</span>
+        <p class="sync-status" id="syncStatus" role="status">数据保存在此浏览器</p>
+      </div>
+      <section class="data-actions">
+        <button class="primary-button" id="openFileBtn" type="button">打开 / 绑定 JSON</button>
+        <button class="secondary-button" id="downloadBackupBtn" type="button">导出备份</button>
+        <button class="secondary-button" id="createFileBtn" type="button">新建数据文件</button>
+        <button class="secondary-button" id="saveFileBtn" type="button">保存到文件</button>
+      </section>
+      <label class="sync-toggle">
+        <input type="checkbox" id="autoSaveToggle" />
+        <span>修改后自动保存到已绑定的文件</span>
+      </label>
+      <p class="dialog-hint">v3 文件以只读方式导入并在浏览器中迁移。导出和备份使用 v4 JSON。</p>
+    </dialog>
+
+    <dialog class="app-dialog material-dialog" id="materialDialog" aria-labelledby="materialEditorTitle">
       <form id="materialForm">
-        <h2 id="materialEditorTitle">添加素材</h2>
+        <div class="dialog-heading"><h2 id="materialEditorTitle">添加素材</h2><button class="icon-button" id="materialClose" type="button" aria-label="关闭">×</button></div>
         <div class="material-editor-fields">
           <label class="field"><span>分类</span><select id="materialCategory"><option value="expression">表达素材</option><option value="idea">观点与内容</option><option value="strategy">写作方法</option></select></label>
           <label class="field"><span>类型</span><select id="materialSubtype"></select></label>
           <label class="field material-wide"><span>来源作文</span><select id="materialSource" required></select></label>
+          <label class="field material-wide" id="materialTitleField" hidden><span>方法名称</span><input id="materialTitle" placeholder="例如：按趋势分组" /></label>
           <div class="field material-wide"><span id="materialBodyLabel">素材内容</span><div class="rich-field" id="materialBody" contenteditable="true" role="textbox" aria-labelledby="materialBodyLabel" aria-multiline="true" spellcheck="false"></div></div>
           <label class="field"><span>中文释义</span><textarea id="materialTranslation" rows="2"></textarea></label>
           <label class="field"><span>使用场景</span><textarea id="materialContext" rows="2"></textarea></label>
@@ -489,8 +506,8 @@
         </div>
       </form>
     </dialog>
-    <script src="materials.js?v=27"></script>
-    <script src="material-ui.js?v=27"></script>
-    <script src="app.js?v=27"></script>
+    <script src="materials.js?v=28"></script>
+    <script src="material-ui.js?v=28"></script>
+    <script src="app.js?v=28"></script>
   </body>
 </html>

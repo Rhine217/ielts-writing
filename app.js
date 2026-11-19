@@ -430,7 +430,8 @@ function showToast(message, type = "ok") {
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
   toast.textContent = message;
-  document.body.appendChild(toast);
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+  (document.querySelector("dialog[open]") || document.body).appendChild(toast);
   requestAnimationFrame(() => toast.classList.add("show"));
   setTimeout(() => {
     toast.classList.remove("show");
@@ -448,7 +449,7 @@ const FONT_SCALES = [
 ];
 
 function applyFontScale(scale) {
-  document.body.style.zoom = String(scale);
+  document.documentElement.style.fontSize = `${100 * scale}%`;
 }
 
 function renderFontSizeOptions() {
@@ -499,7 +500,7 @@ function applyTheme(name) {
   set("soft", theme.soft);
   set("bg", theme.bg);
   set("surface", theme.surface);
-  set("accent-hover", blend(theme.accent, theme.dark ? "#000000" : "#ffffff", theme.dark ? 0.14 : 0.16));
+  set("accent-hover", blend(theme.accent, theme.dark ? "#ffffff" : "#000000", 0.12));
   state.theme = name;
   renderThemeSwatches();
 }
@@ -907,10 +908,11 @@ function setLoadedData(data) {
   state.bankTab = "expression";
   state.libraryBankTab = "expression";
   state.libraryPage = 1;
-  for (const id of ["librarySearch", "libraryTask", "libraryTopic", "librarySubtype", "librarySource", "libraryReview"]) {
-    document.getElementById(id).value = "";
+  for (const id of libraryFilterIds) {
+    const field = document.getElementById(id);
+    if (field.type === "checkbox") field.checked = false;
+    else field.value = "";
   }
-  $("#libraryFavorites").checked = false;
 }
 
 function migrationSummary(data) {
@@ -1647,12 +1649,19 @@ function parseImportThinking(text) {
 
 function openImportModal() {
   els.importText.value = "";
-  els.importModal.classList.remove("hidden");
+  $("#importError").hidden = true;
+  els.importModal.showModal();
   els.importText.focus();
 }
 
 function closeImportModal() {
-  els.importModal.classList.add("hidden");
+  if (els.importModal.open) els.importModal.close();
+}
+
+function showImportError(message) {
+  const error = $("#importError");
+  error.textContent = message;
+  error.hidden = false;
 }
 
 function clearReviewContent(entry) {
@@ -1691,12 +1700,12 @@ function openTypingModal() {
   els.typingEntrySelect.value = current && entries.some((entry) => entry.id === current.id) ? current.id : entries[0].id;
   els.typingEntrySelect.__dd?.sync();
   loadTypingEssay();
-  els.typingModal.classList.remove("hidden");
+  els.typingModal.showModal();
   els.typingInput.focus();
 }
 
 function closeTypingModal() {
-  els.typingModal.classList.add("hidden");
+  if (els.typingModal.open) els.typingModal.close();
   stopTypingTimer();
 }
 
@@ -1777,7 +1786,7 @@ function applyParsedImport() {
   if (!entry) return;
   const raw = els.importText.value.trim();
   if (!raw) {
-    showToast("请先粘贴批改结果", "error");
+    showImportError("请先粘贴批改结果");
     return;
   }
 
@@ -1794,7 +1803,7 @@ function applyParsedImport() {
     hasScores || evalSections?.length || corrections.length || Object.keys(bank).length || model || thinking.thinking,
   );
   if (!hasImportContent) {
-    showToast("未识别到可导入的内容，请确认格式", "error");
+    showImportError("未识别到可导入的内容，请确认格式");
     return;
   }
 
@@ -1931,8 +1940,16 @@ function renderMetrics() {
       <span>总复盘 · 大作文 ${task2} / 小作文 ${task1}</span>
     </div>
     <div class="metric-card streak-card">
-      <strong>${lastDate || "-"}</strong>
-      <span>${lastDate ? "上一次练作文是这一天" : "还没有练习记录"}</span>
+      <strong>${escapeHtml(lastDate || "—")}</strong>
+      <span>${lastDate ? "最近练习" : "还没有练习记录"}</span>
+    </div>
+    <div class="metric-card weighted-card">
+      <strong>${weighted ?? "-"}</strong>
+      <span>${weighted ? "加权写作分（小作文×1/3 + 大作文×2/3）" : "加权写作分 · 需同时有大作文与小作文记录"}</span>
+    </div>
+    <div class="metric-card average-card">
+      <strong>${lastAvg ?? "-"}</strong>
+      <span>${lastAvg ? "最近一次总分" : "还没有分数记录"}</span>
     </div>
     <div class="metric-card distribution-card">
       <div class="metric-card-head"><strong>${task2}</strong><span>大作文话题</span></div>
@@ -1945,14 +1962,6 @@ function renderMetrics() {
     <div class="metric-card distribution-card">
       <div class="metric-card-head"><strong>${errTotal}</strong><span>错误标注 · 按类型（常见错误追踪）</span></div>
       ${renderDistribution(errCounts, CORRECTION_KINDS.map((c) => c.kind))}
-    </div>
-    <div class="metric-card weighted-card">
-      <strong>${weighted ?? "-"}</strong>
-      <span>${weighted ? "加权写作分（小作文×1/3 + 大作文×2/3）" : "加权写作分 · 需同时有大作文与小作文记录"}</span>
-    </div>
-    <div class="metric-card average-card">
-      <strong>${lastAvg ?? "-"}</strong>
-      <span>${lastAvg ? "最近一次总分" : "还没有分数记录"}</span>
     </div>
   `;
   renderSummary();
@@ -2055,24 +2064,25 @@ function renderEntryList() {
   els.entryList.innerHTML = entries
     .map((entry) => {
       const tagLabel = entry.mode === "task2" ? entry.topic : entry.essayType;
-      const tagClass = getTagTone(entry.mode, tagLabel);
-      const typeText = entry.mode === "task2" ? entry.essayType : "小作文";
+      const typeText = entry.mode === "task2" ? entry.essayType : "";
       const score = entry.draftScore || entry.modelScore;
       return `
-        <button class="entry-card ${entry.id === state.currentId ? "active" : ""}" data-entry-id="${escapeHtml(entry.id)}">
+        <button class="entry-card ${entry.id === state.currentId ? "active" : ""}" data-entry-id="${escapeHtml(entry.id)}" aria-current="${entry.id === state.currentId}">
           <span class="entry-card-top">
             <strong>${escapeHtml(entry.title || "未命名复盘")}</strong>
             ${score ? `<b class="card-score">${escapeHtml(score)}</b>` : ""}
           </span>
           <span class="entry-meta">
-            <em>${escapeHtml(typeText)}</em>
-            <b class="mini-tag ${tagClass}">${escapeHtml(tagLabel || "未分类")}</b>
+            ${typeText ? `<em>${escapeHtml(typeText)}</em>` : ""}
+            <b class="mini-tag">${escapeHtml(tagLabel || "未分类")}</b>
             <em>${escapeHtml(entry.practiceDate || "未记录日期")}</em>
           </span>
         </button>
       `;
     })
-    .join("");
+    .join("") || (query || typeFilter !== "all" || (state.mode === "task2" && topicFilter !== "all")
+      ? '<div class="entry-empty"><p>没有符合条件的作文。</p><button class="text-button" data-reset-entry-filters type="button">重置搜索和筛选</button></div>'
+      : '<div class="entry-empty"><p>这个 Task 还没有练习记录。</p><button class="text-button" data-start-entry type="button">新建第一篇</button></div>');
 }
 
 /* ---------------- 渲染：详情页 ---------------- */
@@ -2119,6 +2129,7 @@ function showHome() {
   els.detailView.classList.add("hidden");
   els.libraryView.classList.add("hidden");
   renderAll();
+  finishNavigation();
 }
 
 function showLibrary() {
@@ -2128,12 +2139,8 @@ function showLibrary() {
   els.libraryView.classList.remove("hidden");
   renderLibrary();
   renderEntryList();
-}
-
-function getTagTone(mode, group) {
-  const order = mode === "task2" ? TASK2_TOPICS : TASK_TYPES.task1;
-  const index = Math.max(0, order.indexOf(group));
-  return `tag-tone-${index % 12}`;
+  finishNavigation();
+  rememberWorkspace();
 }
 
 function renderLibraryPagination(pageCount, total) {
@@ -2299,7 +2306,13 @@ function renderAll() {
   renderTopicOptions();
   renderEntryList();
   renderEditor();
-  $$(".mode-tab").forEach((button) => button.classList.toggle("active", button.dataset.mode === state.mode));
+  $$("[data-mode]").forEach((button) => {
+    const active = button.dataset.mode === state.mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  $("#entryMoreMenu").open = false;
+  rememberWorkspace();
   syncAllSelects();
 }
 
@@ -2345,20 +2358,139 @@ function updateStats() {
 
 /* ---------------- 事件绑定 ---------------- */
 
+const compactNavigation = matchMedia("(max-width: 900px)");
+const WORKSPACE_KEY = "ielts-writing-review-workspace";
+
+function setDrawer(open, returnFocus = true) {
+  const expanded = open && compactNavigation.matches;
+  els.appShell.classList.toggle("drawer-open", expanded);
+  $("#drawerScrim").hidden = !expanded;
+  $("#mobileMenuBtn").setAttribute("aria-expanded", String(expanded));
+  $("#workspace").inert = expanded;
+  $(".mobile-toolbar").inert = expanded;
+  if (expanded) $("#drawerClose").focus();
+  if (!expanded && returnFocus && compactNavigation.matches) $("#mobileMenuBtn").focus({ preventScroll: true });
+}
+
+function closeThemePopover() {
+  els.themePopover.classList.add("hidden");
+}
+
+function finishNavigation() {
+  const wasOpen = els.appShell.classList.contains("drawer-open");
+  setDrawer(false, false);
+  closeAllSelects();
+  closeThemePopover();
+  closeFontPopover();
+  window.scrollTo({ top: 0, behavior: "instant" });
+  if (wasOpen) {
+    const target = $("#workspace > section:not(.hidden) .page-title") || els.entryTitle;
+    target.setAttribute("tabindex", target === els.entryTitle ? "0" : "-1");
+    target.focus({ preventScroll: true });
+  }
+}
+
+function rememberWorkspace() {
+  try {
+    const view = !els.libraryView.classList.contains("hidden") ? "library" : state.currentId ? "entry" : "home";
+    sessionStorage.setItem(WORKSPACE_KEY, JSON.stringify({
+      view, id: state.currentId, mode: state.mode, bankTab: state.bankTab,
+      library: getLibraryViewState(), collapsed: els.appShell.classList.contains("sidebar-collapsed") && !compactNavigation.matches,
+    }));
+  } catch { /* The workspace can still be used without session storage. */ }
+}
+
+function readWorkspace() {
+  try { return JSON.parse(sessionStorage.getItem(WORKSPACE_KEY)); } catch { return null; }
+}
+
+function restoreWorkspace(saved) {
+  if (!saved) return;
+  if (saved.mode === "task1" || saved.mode === "task2") state.mode = saved.mode;
+  if (Object.hasOwn(MATERIAL_TYPES, saved.bankTab)) state.bankTab = saved.bankTab;
+  if (saved.collapsed && !compactNavigation.matches) {
+    els.appShell.classList.add("sidebar-collapsed");
+    updateCollapseButton();
+  }
+  const entry = saved.view === "entry" && state.entries.find(({ id }) => id === saved.id);
+  if (entry) {
+    state.mode = entry.mode;
+    state.currentId = entry.id;
+  }
+  restoreLibraryViewState(saved.library);
+  renderAll();
+  if (saved.view === "library") showLibrary();
+}
+
+function updateCollapseButton() {
+  const collapsed = els.appShell.classList.contains("sidebar-collapsed");
+  const button = $("#collapseBtn");
+  const label = collapsed ? "展开目录" : "收起目录";
+  button.textContent = collapsed ? "›" : "‹";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-expanded", String(!collapsed));
+}
+
+function bindWorkspaceEvents() {
+  $("#mobileMenuBtn").addEventListener("click", () => setDrawer(true));
+  $("#drawerClose").addEventListener("click", () => setDrawer(false));
+  $("#drawerScrim").addEventListener("click", () => setDrawer(false));
+  $("#mobileLibraryBtn").addEventListener("click", showLibrary);
+  compactNavigation.addEventListener("change", () => {
+    setDrawer(false, false);
+    if (compactNavigation.matches) els.appShell.classList.remove("sidebar-collapsed");
+    updateCollapseButton();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (!els.appShell.classList.contains("drawer-open") || document.querySelector("dialog[open]")) return;
+    if (event.key === "Escape") setDrawer(false);
+  });
+  const dataDialog = $("#dataToolsDialog");
+  for (const id of ["dataToolsBtn", "homeDataToolsBtn"]) {
+    document.getElementById(id).addEventListener("click", () => dataDialog.showModal());
+  }
+  $("#dataToolsClose").addEventListener("click", () => dataDialog.close());
+  $("#libraryFilterDisclosure").open = !compactNavigation.matches;
+  $("#homeNewEntryBtn").addEventListener("click", () => $("#newEntryBtn").click());
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest("#entryMoreMenu")) $("#entryMoreMenu").open = false;
+  });
+}
+
 function bindEvents() {
   $("#collapseBtn").addEventListener("click", () => {
     els.appShell.classList.toggle("sidebar-collapsed");
-    $("#collapseBtn").textContent = els.appShell.classList.contains("sidebar-collapsed") ? "›" : "‹";
+    updateCollapseButton();
+    rememberWorkspace();
   });
 
   // —— 文件同步 ——
-  els.openFileBtn.addEventListener("click", bindDataFile);
+  bindWorkspaceEvents();
+  els.openFileBtn.addEventListener("click", async () => {
+    els.openFileBtn.disabled = true;
+    try {
+      await bindDataFile();
+    } catch (error) {
+      showToast(`读取文件失败：${error.message}`, "error");
+    } finally {
+      els.openFileBtn.disabled = false;
+    }
+  });
   els.createFileBtn.addEventListener("click", createDataFile);
   $("#downloadBackupBtn").addEventListener("click", downloadBackup);
   els.fileOpenInput.addEventListener("change", async () => {
     const file = els.fileOpenInput.files[0];
     els.fileOpenInput.value = "";
-    if (file) await adoptFile(null, await file.text(), false, file.name);
+    if (!file) return;
+    els.openFileBtn.disabled = true;
+    try {
+      await adoptFile(null, await file.text(), false, file.name);
+    } catch (error) {
+      showToast(`读取文件失败：${error.message}`, "error");
+    } finally {
+      els.openFileBtn.disabled = false;
+    }
   });
 
   els.saveFileBtn.addEventListener("click", async () => {
@@ -2366,8 +2498,13 @@ function bindEvents() {
       downloadDataFile();
       return;
     }
-    const ok = await writeToFile();
-    if (ok) showToast(`已手动同步到「${state.fileName}」`);
+    els.saveFileBtn.disabled = true;
+    try {
+      const ok = await writeToFile();
+      if (ok) showToast(`已手动同步到「${state.fileName}」`);
+    } finally {
+      els.saveFileBtn.disabled = false;
+    }
   });
 
   els.autoSaveToggle.addEventListener("change", () => {
@@ -2434,16 +2571,14 @@ function bindEvents() {
     });
   }
 
-  function closeThemePopover() {
-    els.themePopover.classList.add("hidden");
-  }
-
   $("#newEntryBtn").addEventListener("click", () => {
     const entry = makeEmptyEntry();
     state.entries.unshift(entry);
     state.currentId = entry.id;
     persist();
     renderAll();
+    finishNavigation();
+    els.entryTitle.focus();
   });
 
   $("#backHomeBtn").addEventListener("click", showHome);
@@ -2452,9 +2587,7 @@ function bindEvents() {
   els.importModalClose.addEventListener("click", closeImportModal);
   els.importCancelBtn.addEventListener("click", closeImportModal);
   els.importConfirmBtn.addEventListener("click", applyParsedImport);
-  els.importModal.addEventListener("click", (event) => {
-    if (event.target === els.importModal) closeImportModal();
-  });
+  els.importText.addEventListener("input", () => { $("#importError").hidden = true; });
 
   // —— 清除批改（保留题目与我的版本原文） ——
   els.clearReviewBtn.addEventListener("click", () => {
@@ -2463,6 +2596,7 @@ function bindEvents() {
     const ok = window.confirm(
       "将清除本篇文章的批改内容：\n\n· 我的版本评分（总分/四维/打分依据）\n· 范文版本及其评分\n· 评语\n· 错误标注\n· 素材沉淀\n· 思路与结构\n\n题目（原题/意思/题型/日期/来源/图片）、标题和「我的版本」原文会保留。\n\n确定清除吗？",
     );
+    $("#entryMoreMenu").open = false;
     if (!ok) return;
     clearReviewContent(entry);
     removeEntryMaterials(entry);
@@ -2478,6 +2612,8 @@ function bindEvents() {
     if (!button) return;
     state.libraryPage += button.dataset.libraryPage === "next" ? 1 : -1;
     renderLibraryContent();
+    els.libraryContent.scrollIntoView({ block: "start" });
+    els.libraryPagination.querySelector(`[data-library-page="${button.dataset.libraryPage}"]:not(:disabled)`)?.focus({ preventScroll: true });
   });
 
   els.editSummaryBtn.addEventListener("click", () => {
@@ -2496,7 +2632,8 @@ function bindEvents() {
   $("#deleteEntryBtn").addEventListener("click", () => {
     const entry = currentEntry();
     if (!entry) return;
-    if (!window.confirm(`确定删除「${entry.title || "未命名复盘"}」吗？`)) return;
+    $("#entryMoreMenu").open = false;
+    if (!window.confirm(`确定删除「${entry.title || "未命名复盘"}」及其关联素材吗？`)) return;
     removeEntryMaterials(entry);
     state.entries = state.entries.filter((item) => item.id !== entry.id);
     state.currentId = "";
@@ -2515,15 +2652,33 @@ function bindEvents() {
 
   els.typeFilter.addEventListener("change", renderEntryList);
   els.topicFilter.addEventListener("change", renderEntryList);
-  els.entrySearch.addEventListener("input", renderEntryList);
+  let entrySearchTimer;
+  els.entrySearch.addEventListener("input", () => {
+    clearTimeout(entrySearchTimer);
+    entrySearchTimer = setTimeout(renderEntryList, 150);
+  });
 
   els.entryList.addEventListener("click", (event) => {
+    if (event.target.closest("[data-reset-entry-filters]")) {
+      els.typeFilter.value = "all";
+      els.topicFilter.value = "all";
+      els.entrySearch.value = "";
+      syncAllSelects();
+      renderEntryList();
+      els.entrySearch.focus();
+      return;
+    }
+    if (event.target.closest("[data-start-entry]")) {
+      $("#newEntryBtn").click();
+      return;
+    }
     const card = event.target.closest("[data-entry-id]");
     if (!card) return;
     state.currentId = card.dataset.entryId;
     const entry = currentEntry();
     if (entry) state.mode = entry.mode;
     renderAll();
+    finishNavigation();
   });
 
   [els.entryTitle, els.promptText, els.essayType, els.practiceDate, els.entrySource, els.topicSelect, els.thinkingText, els.draftReasonTR, els.draftReasonCC, els.draftReasonLR, els.draftReasonGRA].forEach((input) => {
@@ -2670,8 +2825,7 @@ function bindEvents() {
       hideToolbar();
       hideHighlightToolbar();
       closeImageModal();
-      closeImportModal();
-      closeTypingModal();
+      $("#entryMoreMenu").open = false;
       closeAllSelects();
       closeThemePopover();
       closeFontPopover();
@@ -2707,9 +2861,7 @@ function bindEvents() {
   els.typingRestartBtn.addEventListener("click", loadTypingEssay);
   els.typingEntrySelect.addEventListener("change", loadTypingEssay);
   els.typingInput.addEventListener("input", handleTypingInput);
-  els.typingModal.addEventListener("click", (event) => {
-    if (event.target === els.typingModal) closeTypingModal();
-  });
+  els.typingModal.addEventListener("close", stopTypingTimer);
 
   // —— 评语模块 ——
   els.addEvalSectionBtn.addEventListener("click", (event) => {
@@ -3034,6 +3186,8 @@ function autoResizeTextareas() {
 /* ---------------- 启动 ---------------- */
 
 function init() {
+  const savedWorkspace = readWorkspace();
+  const startup = $("#startupStatus");
   loadPreferences();
   applyTheme(state.theme);
   applyFontScale(state.fontScale);
@@ -3046,10 +3200,12 @@ function init() {
 
   // 页面关闭/隐藏前把防抖中的写入立即落盘，避免丢最后几秒的输入
   window.addEventListener("beforeunload", () => {
+    if ($("#workspace").hasAttribute("aria-busy")) return;
     clearTimeout(persistTimer);
     flushPersist();
   });
   window.addEventListener("pagehide", () => {
+    if ($("#workspace").hasAttribute("aria-busy")) return;
     clearTimeout(persistTimer);
     flushPersist();
   });
@@ -3070,7 +3226,6 @@ function init() {
     els.modelScoreCC,
     els.modelScoreLR,
     els.modelScoreGRA,
-    els.typingEntrySelect,
   ].forEach(enhanceSelect);
 
   renderSyncStatus();
@@ -3087,10 +3242,16 @@ function init() {
       applyFontScale(state.fontScale);
       renderAll();
       renderSyncStatus();
-      regrowCorrectionTextareas();
-    } else {
-      regrowCorrectionTextareas();
     }
+    restoreWorkspace(savedWorkspace);
+    regrowCorrectionTextareas();
+  }).catch((error) => {
+    showToast(`数据加载失败：${error.message}`, "error");
+    renderAll();
+  }).finally(() => {
+    startup.hidden = true;
+    $("#workspace").removeAttribute("aria-busy");
+    $("#workspace").inert = false;
   });
 }
 
