@@ -531,6 +531,9 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .dd-option {
@@ -546,6 +549,10 @@ html.dark input[type="date"]::-webkit-calendar-picker-indicator {
   font-size: 13px;
   font-weight: 600;
   text-align: left;
+}
+
+.dd-panel:focus {
+  outline: none;
 }
 
 .dd-option:hover,
@@ -2257,6 +2264,17 @@ summary strong {
 .material-actions select { min-height: 34px; height: 34px; max-width: 100%; }
 .material-actions select[data-status="mastered"] { color: var(--green); }
 .material-actions select[data-status="revisit"] { color: color-mix(in srgb, var(--amber) 70%, var(--ink)); }
+.material-actions .dd {
+  width: 106px;
+  max-width: 100%;
+  margin-inline-start: auto;
+}
+.material-actions .dd-trigger {
+  min-height: 34px;
+  font-size: var(--text-small);
+}
+.material-actions .dd:has(select[data-status="mastered"]) .dd-label { color: var(--green); }
+.material-actions .dd:has(select[data-status="revisit"]) .dd-label { color: color-mix(in srgb, var(--amber) 70%, var(--ink)); }
 .material-source { font-size: var(--text-small); }
 .empty-library { display: grid; justify-items: center; align-content: center; gap: var(--space-1); padding: var(--space-5); }
 .empty-library strong { color: var(--ink); }

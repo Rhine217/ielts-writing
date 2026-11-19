@@ -218,6 +218,9 @@ function renderLibraryContent() {
   $("#libraryTotal").textContent = `全部 ${state.materials.length} 条素材`;
   $("#libraryResultCount").textContent = `找到 ${matches.length} 条`;
   renderLibraryPagination(pages, matches.length);
+  $("#libraryFilters").querySelectorAll("select").forEach(enhanceSelect);
+  els.libraryContent.querySelectorAll("[data-material-review]").forEach(enhanceSelect);
+  syncAllSelects();
   rememberWorkspace();
 }
 
@@ -470,7 +473,8 @@ function bindMaterialEvents() {
     if (!material) return;
     material.reviewStatus = event.target.value;
     refreshMaterials();
-    els.libraryContent.querySelector(`[data-material-id="${CSS.escape(material.id)}"] [data-material-review]`)?.focus({ preventScroll: true });
+    const reviewSelect = els.libraryContent.querySelector(`[data-material-id="${CSS.escape(material.id)}"] [data-material-review]`);
+    reviewSelect?.__dd?.trigger.focus({ preventScroll: true });
     showToast(`复习状态已更新为「${MATERIAL_REVIEW[material.reviewStatus]}」`);
   });
 }

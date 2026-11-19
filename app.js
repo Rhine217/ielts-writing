@@ -555,6 +555,7 @@ class CustomSelect {
 
     select.__dd = this;
     activeSelects.add(this);
+    select.addEventListener("change", () => this.sync());
     this.bindTrigger();
     this.sync();
   }
@@ -569,13 +570,18 @@ class CustomSelect {
     const text = option ? option.textContent.trim() : "";
     this.label.textContent = text;
     this.label.title = text;
-    if (this.panel && this.panel.isConnected) this.buildPanel();
+    this.trigger.disabled = this.select.disabled;
+    const name = this.select.getAttribute("aria-label") ||
+      this.select.closest("label")?.querySelector(":scope > span")?.textContent.trim() || this.select.title || "";
+    this.trigger.setAttribute("aria-label", name ? `${name}：${text}` : text);
+    if (this.panel && this.panel.isConnected) this.close();
   }
 
   buildPanel() {
     const panel = document.createElement("div");
     panel.className = "dd-panel";
     panel.setAttribute("role", "listbox");
+    panel.setAttribute("aria-label", this.trigger.getAttribute("aria-label") || "选项");
     panel.tabIndex = -1;
 
     [...this.select.options].forEach((option, i) => {
@@ -584,15 +590,16 @@ class CustomSelect {
       button.className = `dd-option${i === this.select.selectedIndex ? " active" : ""}`;
       button.dataset.index = String(i);
       button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", String(i === this.select.selectedIndex));
+      button.tabIndex = -1;
+      button.disabled = option.disabled;
+      button.id = `dd-option-${this.select.id || "dynamic"}-${i}`;
       const text = option.textContent.trim();
       const desc = option.dataset?.desc || "";
       button.innerHTML = `<span class="dd-option-copy"><span class="dd-option-text"></span>${desc ? `<em class="dd-option-desc"></em>` : ""}</span><span class="dd-check" aria-hidden="true">✓</span>`;
       button.querySelector(".dd-option-text").textContent = text;
       if (desc) button.querySelector(".dd-option-desc").textContent = desc;
-      button.addEventListener("pointerdown", (event) => {
-        event.preventDefault();
-        this.choose(i);
-      });
+      button.addEventListener("click", () => this.choose(i));
       button.addEventListener("mouseenter", () => {
         this.activeIndex = i;
         this.highlight();
@@ -603,8 +610,16 @@ class CustomSelect {
     panel.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         this.close();
         this.trigger.focus();
+      } else if (event.key === "Tab") {
+        this.close();
+        this.trigger.focus();
+      } else if (event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        this.activeIndex = event.key === "Home" ? 0 : this.select.options.length - 1;
+        this.highlight();
       } else if (event.key === "ArrowDown") {
         event.preventDefault();
         this.move(1);
@@ -621,7 +636,7 @@ class CustomSelect {
   }
 
   open() {
-    if (this.panel && this.panel.isConnected) return;
+    if (this.select.disabled || (this.panel && this.panel.isConnected)) return;
     activeSelects.forEach((select) => {
       if (select !== this) select.close();
     });
@@ -638,14 +653,18 @@ class CustomSelect {
   positionPanel() {
     const rect = this.trigger.getBoundingClientRect();
     const panel = this.panel;
-    panel.style.minWidth = `${rect.width}px`;
+    panel.style.minWidth = `${Math.min(rect.width, window.innerWidth - 16)}px`;
     panel.style.width = "max-content";
     panel.style.maxWidth = `${Math.min(360, window.innerWidth - 16)}px`;
     const maxLeft = Math.max(8, Math.min(rect.left, window.innerWidth - panel.offsetWidth - 8));
     panel.style.left = `${maxLeft}px`;
+    const below = window.innerHeight - rect.bottom - 12;
+    const above = rect.top - 12;
+    const flip = below < Math.min(280, panel.scrollHeight) && above > below;
+    panel.style.maxHeight = `${Math.max(40, Math.min(320, flip ? above : below))}px`;
     const height = panel.offsetHeight;
     const top = rect.bottom + 4;
-    if (top + height > window.innerHeight - 8) {
+    if (flip) {
       panel.style.top = `${Math.max(8, rect.top - height - 4)}px`;
       panel.classList.add("flip");
     } else {
@@ -658,6 +677,7 @@ class CustomSelect {
     if (!this.panel) return;
     const options = this.panel.querySelectorAll(".dd-option");
     options.forEach((button, i) => button.classList.toggle("hover", i === this.activeIndex));
+    if (options[this.activeIndex]) this.panel.setAttribute("aria-activedescendant", options[this.activeIndex].id);
     options[this.activeIndex]?.scrollIntoView({ block: "nearest" });
   }
 
@@ -671,14 +691,14 @@ class CustomSelect {
 
   choose(index) {
     const option = this.select.options[index];
-    if (!option) return;
+    if (!option || option.disabled) return;
+    this.close();
     if (this.select.value !== option.value) {
       this.select.value = option.value;
       this.select.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    this.close();
     this.sync();
-    this.trigger.focus();
+    if (this.trigger.isConnected) this.trigger.focus({ preventScroll: true });
   }
 
   close() {
