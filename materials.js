@@ -236,7 +236,8 @@ function readV4Data(data) {
     if (typeof material?.id !== "string" || !material.id || ids.has(material.id) ||
         !links.has(material.sourceEntryId) || !Object.hasOwn(MATERIAL_TYPES, material.category) ||
         !Object.hasOwn(MATERIAL_TYPES[material.category].types, material.subtype) ||
-        typeof material.contentHtml !== "string" || !Object.hasOwn(MATERIAL_REVIEW, material.reviewStatus) ||
+        (material.contentHtml != null && typeof material.contentHtml !== "string") ||
+        !Object.hasOwn(MATERIAL_REVIEW, material.reviewStatus) ||
         (material.tags != null && (!Array.isArray(material.tags) || material.tags.some((tag) => typeof tag !== "string")))) {
       throw new Error("素材格式无效、ID 重复或缺少来源作文");
     }

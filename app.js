@@ -1285,6 +1285,7 @@ function downloadDataFile() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+  showToast("已生成 v4 数据文件");
 }
 
 async function restoreFileBinding() {
@@ -1380,6 +1381,7 @@ function downloadBackup() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+  showToast("已生成 v4 JSON 备份");
 }
 
 /* ---------------- 导出单篇复盘（Markdown） ---------------- */
@@ -1506,7 +1508,7 @@ function exportEntryMarkdown() {
     lines.push("", "## 素材沉淀");
     for (const material of materials) {
       const type = MATERIAL_TYPES[material.category].types[material.subtype];
-      lines.push("", `### ${type}`, material.plainText || materialPlainText(safeMaterialHtml(material.contentHtml)));
+      lines.push("", `### ${type}`, materialPlainText(materialBodyHtml(material, entry)));
       if (material.translation) lines.push(material.translation);
       if (material.context) lines.push(`使用场景：${material.context}`);
       if (material.note) lines.push(`备注：${material.note}`);
@@ -1871,7 +1873,7 @@ function applyParsedImport() {
 
 function bandDescFor(select, score) {
   const dim = SCORE_SELECT_DIMENSION[select.id];
-  if (!dim || !score) return "";
+  if (!dim || !score || (dim === "tr" && currentEntry()?.mode === "task1")) return "";
   return BAND_DESCRIPTORS[dim]?.[score] || "";
 }
 
@@ -1933,6 +1935,19 @@ function updateScoreAvgs(entry) {
 }
 
 function renderScoreStrip(entry) {
+  if (els.detailView.dataset.scoreEntry !== entry.id) {
+    els.detailView.dataset.scoreEntry = entry.id;
+    els.detailView.classList.remove("model-score-editing");
+    $("#draftReasonsPanel").open = false;
+  }
+  const task1 = entry.mode === "task1";
+  $$("[data-task-score]").forEach((label) => {
+    label.textContent = task1 ? "TA" : "TR";
+    if (label.closest(".dim-field")) {
+      label.closest(".dim-field").title = task1 ? "Task Achievement · 任务完成度" : "Task Response · 任务回应";
+    }
+  });
+  els.draftReasonTR.setAttribute("aria-label", task1 ? "TA 评分依据" : "TR 评分依据");
   els.draftScore.value = entry.draftScore || "";
   els.modelScore.value = entry.modelScore || "";
   SCORE_DIMENSIONS.forEach((dim) => {
@@ -1942,6 +1957,19 @@ function renderScoreStrip(entry) {
     els[`draftReason${key}`].value = entry.draftReasons?.[dim.key] || "";
   });
   updateScoreAvgs(entry);
+  updateModelScoreControls(entry);
+}
+
+function updateModelScoreControls(entry) {
+  const shown = Boolean(entry?.modelScore || Object.values(entry?.modelScores || {}).some(Boolean) ||
+    els.detailView.classList.contains("model-score-editing"));
+  $("#modelScoreEmpty").hidden = shown;
+  $$("[data-model-score-control]").forEach((element) => { element.hidden = !shown; });
+}
+
+function fitScoreReasons() {
+  if (!$("#draftReasonsPanel").open || CSS.supports("field-sizing", "content")) return;
+  $$("#draftReasonsPanel textarea").forEach((field) => autoGrowTextarea(field, 42));
 }
 
 function renderMetrics() {
@@ -1965,26 +1993,34 @@ function renderMetrics() {
     </div>
     <div class="metric-card weighted-card">
       <strong>${weighted ?? "-"}</strong>
-      <span>${weighted ? "加权写作分（小作文×1/3 + 大作文×2/3）" : "加权写作分 · 需同时有大作文与小作文记录"}</span>
+      <span>加权写作分</span>
+      <small class="metric-formula">Task 1 × ⅓ + Task 2 × ⅔</small>
     </div>
     <div class="metric-card average-card">
       <strong>${lastAvg ?? "-"}</strong>
       <span>${lastAvg ? "最近一次总分" : "还没有分数记录"}</span>
     </div>
-    <div class="metric-card distribution-card">
-      <div class="metric-card-head"><strong>${task2}</strong><span>大作文话题</span></div>
-      ${renderDistribution(topicCounts(), TASK2_TOPICS)}
-    </div>
-    <div class="metric-card distribution-card">
-      <div class="metric-card-head"><strong>${task1}</strong><span>小作文题型</span></div>
-      ${renderDistribution(typeCounts(), TASK_TYPES.task1)}
-    </div>
-    <div class="metric-card distribution-card">
+    ${renderCoverageCard(task2, "大作文话题", topicCounts(), TASK2_TOPICS)}
+    ${renderCoverageCard(task1, "小作文题型", typeCounts(), TASK_TYPES.task1)}
+    <div class="metric-card distribution-card error-distribution">
       <div class="metric-card-head"><strong>${errTotal}</strong><span>错误标注 · 按类型（常见错误追踪）</span></div>
-      ${renderDistribution(errCounts, CORRECTION_KINDS.map((c) => c.kind))}
+      <div class="distribution-rows">${renderDistribution(errCounts, CORRECTION_KINDS.map((c) => c.kind))}</div>
     </div>
   `;
   renderSummary();
+}
+
+function renderCoverageCard(total, label, counts, order) {
+  const used = order.filter((key) => counts[key] > 0);
+  const unused = order.filter((key) => !counts[key]);
+  return `<div class="metric-card distribution-card">
+    <div class="metric-card-head"><strong>${total}</strong><span>${label}</span></div>
+    <div class="distribution-rows">${used.length ? renderDistribution(counts, used) : '<p class="empty-hint">暂无练习记录</p>'}</div>
+    ${unused.length ? `<details class="distribution-more">
+      <summary><span class="distribution-expand">显示全部</span><span class="distribution-collapse">收起</span></summary>
+      <div class="distribution-rows">${renderDistribution(counts, unused)}</div>
+    </details>` : ""}
+  </div>`;
 }
 
 /* 所有条目按七类错误标签聚合统计（对应提示词长期跟踪的"重复犯的错误"） */
@@ -2140,7 +2176,7 @@ function renderEditor() {
   renderDetailMaterials();
   renderHighlightLegend();
   renderBankSubmenu();
-  autoResizeTextareas();
+  fitScoreReasons();
 }
 
 function showHome() {
@@ -2201,8 +2237,6 @@ function renderEvaluation(entry) {
     node.querySelector(".eval-section-title").value = section.title || "";
     node.querySelector(".eval-section-body").innerHTML = safeMaterialHtml(toRichHtml(section.body || ""));
     els.evaluationList.appendChild(node);
-    // 评语正文：默认一行，随内容自动增高
-    scheduleGrow(node.querySelector(".eval-section-body"), 40);
   });
 }
 
@@ -2225,15 +2259,6 @@ function autoGrowTextarea(textarea, minHeight = 46) {
   textarea.style.height = `${Math.max(textarea.scrollHeight + border, minHeight)}px`;
 }
 
-// 等两帧再测量，让字体加载/文本重排落定，避免高度被低估而截断
-function scheduleGrow(textarea, minHeight = 46) {
-  requestAnimationFrame(() => requestAnimationFrame(() => autoGrowTextarea(textarea, minHeight)));
-}
-
-function regrowCorrectionTextareas() {
-  els.correctionList.querySelectorAll(".rich-field").forEach(autoGrowTextarea);
-}
-
 function kindColor(kind) {
   return CORRECTION_KINDS.find((item) => item.kind === kind)?.color || "#9aa5b1";
 }
@@ -2253,7 +2278,7 @@ function renderCorrectionFilterBar() {
       const on = state.correctionFilter[item.kind] !== false;
       return `
         <button type="button" class="cf-chip ${on ? "active" : ""}" data-kind="${item.kind}" title="显示/隐藏「${item.kind}」">
-          <i style="background:${item.color}"></i>
+          <i style="background:color-mix(in srgb, ${item.color} 65%, var(--muted))"></i>
           <span class="cf-name">${item.kind}</span><b>${counts[item.kind] || 0}</b>
         </button>`;
     }).join("")}
@@ -2286,19 +2311,14 @@ function renderCorrections() {
     const node = els.correctionTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.index = index;
     node.dataset.kind = correction.kind;
-    node.classList.add(`kind-${correction.kind}`);
+    node.style.setProperty("--kind-color", kindColor(correction.kind));
     node.querySelector('[data-correction="source"]').innerHTML = safeMaterialHtml(toRichHtml(correction.source || ""));
     node.querySelector('[data-correction="fix"]').innerHTML = safeMaterialHtml(toRichHtml(correction.fix || ""));
     node.querySelector('[data-correction="comment"]').innerHTML = safeMaterialHtml(toRichHtml(correction.comment || ""));
     const kindSelect = node.querySelector('[data-correction="kind"]');
     kindSelect.innerHTML = CORRECTION_KINDS.map((item) => `<option value="${item.kind}">${item.kind}</option>`).join("");
     kindSelect.value = correction.kind;
-    // 先挂载到 DOM，再测量内容高度，否则 scrollHeight 为 0
     els.correctionList.appendChild(node);
-    node.querySelectorAll(".rich-field").forEach((field) => {
-      field.addEventListener("input", () => scheduleGrow(field));
-      scheduleGrow(field);
-    });
     enhanceSelect(kindSelect);
   });
 }
@@ -2380,6 +2400,77 @@ function updateStats() {
 
 const compactNavigation = matchMedia("(max-width: 900px)");
 const WORKSPACE_KEY = "ielts-writing-review-workspace";
+const SIDEBAR_WIDTH_KEY = "ielts-writing-review-sidebar-width";
+const SIDEBAR_WIDTH = { min: 220, default: 290, max: 500, workspace: 620 };
+
+function bindSidebarResize() {
+  const handle = $("#sidebarResize");
+  let preferredWidth = SIDEBAR_WIDTH.default;
+  let drag = null;
+  try {
+    const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (saved >= SIDEBAR_WIDTH.min && saved <= SIDEBAR_WIDTH.max) preferredWidth = saved;
+  } catch { /* Use the default when storage is unavailable. */ }
+
+  function applyWidth(width = preferredWidth) {
+    const max = Math.max(SIDEBAR_WIDTH.min, Math.min(SIDEBAR_WIDTH.max,
+      document.documentElement.clientWidth - SIDEBAR_WIDTH.workspace));
+    const value = Math.round(Math.min(max, Math.max(SIDEBAR_WIDTH.min, width)));
+    els.appShell.style.setProperty("--sidebar-width", `${value}px`);
+    handle.setAttribute("aria-valuemax", String(max));
+    handle.setAttribute("aria-valuenow", String(value));
+    return value;
+  }
+
+  function saveWidth(width) {
+    preferredWidth = width;
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width)); } catch { /* Keep the in-memory width. */ }
+  }
+
+  function finishDrag(event, commit) {
+    if (event.pointerId !== drag?.id) return;
+    const { id, width } = drag;
+    drag = null;
+    if (commit) saveWidth(width);
+    if (handle.hasPointerCapture(id)) handle.releasePointerCapture(id);
+    els.appShell.classList.remove("sidebar-resizing");
+    applyWidth();
+  }
+
+  handle.addEventListener("pointerdown", (event) => {
+    if (drag || !event.isPrimary || event.button !== 0 || compactNavigation.matches) return;
+    const width = Number(handle.getAttribute("aria-valuenow"));
+    drag = { id: event.pointerId, startX: event.clientX, startWidth: width, width };
+    handle.setPointerCapture(event.pointerId);
+    els.appShell.classList.add("sidebar-resizing");
+    handle.focus({ preventScroll: true });
+    closeAllSelects();
+    event.preventDefault();
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (event.pointerId === drag?.id) drag.width = applyWidth(drag.startWidth + event.clientX - drag.startX);
+  });
+  handle.addEventListener("pointerup", (event) => finishDrag(event, true));
+  handle.addEventListener("pointercancel", (event) => finishDrag(event, false));
+  handle.addEventListener("lostpointercapture", (event) => finishDrag(event, false));
+  handle.addEventListener("dblclick", () => {
+    saveWidth(SIDEBAR_WIDTH.default);
+    applyWidth();
+  });
+  handle.addEventListener("keydown", (event) => {
+    const width = Number(handle.getAttribute("aria-valuenow"));
+    const step = event.shiftKey ? 32 : 8;
+    const widths = { ArrowLeft: width - step, ArrowRight: width + step, Home: SIDEBAR_WIDTH.min, End: SIDEBAR_WIDTH.max };
+    if (!Object.hasOwn(widths, event.key)) return;
+    event.preventDefault();
+    saveWidth(applyWidth(widths[event.key]));
+  });
+  window.addEventListener("resize", () => {
+    if (drag) finishDrag({ pointerId: drag.id }, false);
+    else applyWidth();
+  });
+  applyWidth();
+}
 
 function setDrawer(open, returnFocus = true) {
   const expanded = open && compactNavigation.matches;
@@ -2453,6 +2544,7 @@ function updateCollapseButton() {
 }
 
 function bindWorkspaceEvents() {
+  bindSidebarResize();
   $("#mobileMenuBtn").addEventListener("click", () => setDrawer(true));
   $("#drawerClose").addEventListener("click", () => setDrawer(false));
   $("#drawerScrim").addEventListener("click", () => setDrawer(false));
@@ -2473,6 +2565,18 @@ function bindWorkspaceEvents() {
   $("#dataToolsClose").addEventListener("click", () => dataDialog.close());
   $("#libraryFilterDisclosure").open = !compactNavigation.matches;
   $("#homeNewEntryBtn").addEventListener("click", () => $("#newEntryBtn").click());
+  $(".detail-nav").addEventListener("click", (event) => {
+    const link = event.target.closest('a[href^="#"]');
+    if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const section = $(link.hash);
+    if (!section) return;
+    event.preventDefault();
+    const details = section.querySelector(":scope > details");
+    if (details) details.open = true;
+    closeAllSelects();
+    section.focus({ preventScroll: true });
+    section.scrollIntoView({ block: "start" });
+  });
   document.addEventListener("click", (event) => {
     if (!event.target.closest("#entryMoreMenu")) $("#entryMoreMenu").open = false;
   });
@@ -2706,7 +2810,7 @@ function bindEvents() {
       saveEntryField(input);
       persist();
       renderEntryList();
-      autoResizeTextareas();
+      if (input.classList.contains("dim-reason")) fitScoreReasons();
     });
   });
 
@@ -2715,10 +2819,17 @@ function bindEvents() {
   });
 
   // —— 四维评分 ——
+  $("#addModelScore").addEventListener("click", () => {
+    els.detailView.classList.add("model-score-editing");
+    updateModelScoreControls(currentEntry());
+    els.modelScore.__dd?.trigger.focus();
+  });
+  $("#draftReasonsPanel").addEventListener("toggle", fitScoreReasons);
   [els.draftScore, els.modelScore, els.draftScoreTR, els.draftScoreCC, els.draftScoreLR, els.draftScoreGRA, els.modelScoreTR, els.modelScoreCC, els.modelScoreLR, els.modelScoreGRA].forEach((select) => {
     select.addEventListener("change", () => {
       saveEntryField(select);
       updateScoreAvgs(currentEntry());
+      updateModelScoreControls(currentEntry());
       renderEntryList();
       persist();
     });
@@ -2857,7 +2968,7 @@ function bindEvents() {
   }, true);
   window.addEventListener("resize", () => {
     closeAllSelects();
-    regrowCorrectionTextareas();
+    fitScoreReasons();
   });
 
   els.selectionToolbar.addEventListener("pointerdown", (event) => event.preventDefault());
@@ -2892,7 +3003,6 @@ function bindEvents() {
   els.evaluationList.addEventListener("input", (event) => {
     const target = event.target.closest(".eval-section-title, .eval-section-body");
     if (!target) return;
-    if (target.classList.contains("eval-section-body")) scheduleGrow(target, 40);
     saveEntryField(target);
     persist();
   });
@@ -2904,7 +3014,7 @@ function bindEvents() {
     if (!section) return;
     const index = Number(section.dataset.index);
     const entry = currentEntry();
-    if (!entry || !entry.evaluation) return;
+    if (!entry || !entry.evaluation || !window.confirm("确定删除这段评语吗？")) return;
     entry.evaluation.splice(index, 1);
     persist();
     renderEvaluation(entry);
@@ -2913,6 +3023,7 @@ function bindEvents() {
   $("#addCorrectionBtn").addEventListener("click", (event) => {
     event.preventDefault();
     addCorrection({ source: "", fix: "", comment: "", kind: "语法" });
+    els.correctionList.querySelector(".correction-item:last-child [data-correction=source]")?.focus();
   });
 
   // —— 错误标注筛选 ——
@@ -2941,18 +3052,20 @@ function bindEvents() {
     if (!correction) return;
     const newKind = event.target.value;
     correction.kind = newKind;
-    item.dataset.kind = newKind;
-    item.classList.remove(...CORRECTION_KINDS.map((c) => `kind-${c.kind}`));
-    item.classList.add(`kind-${newKind}`);
     persist();
     renderCorrections();
   });
 
   els.correctionList.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-remove-correction], [data-save-correction-material]");
+    const button = event.target.closest("[data-remove-correction], [data-save-correction-material], [data-edit-correction]");
     const entry = currentEntry();
     if (!button || !entry) return;
-    const index = Number(button.closest(".correction-item").dataset.index);
+    const item = button.closest(".correction-item");
+    const index = Number(item.dataset.index);
+    if (button.hasAttribute("data-edit-correction")) {
+      item.querySelector("[data-correction=source]").focus();
+      return;
+    }
     if (button.hasAttribute("data-save-correction-material")) {
       openMaterialFromCorrection(entry.corrections[index], entry);
       return;
@@ -3196,13 +3309,6 @@ function cleanEditorHtml(html) {
 
 /* ---------------- 自适应高度（提示区等） ---------------- */
 
-function autoResizeTextareas() {
-  [els.promptText].forEach((textarea) => {
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 86), 220)}px`;
-  });
-}
-
 /* ---------------- 启动 ---------------- */
 
 function init() {
@@ -3250,9 +3356,14 @@ function init() {
 
   renderSyncStatus();
 
-  // 字体加载完成后重新测量错误标注框，避免换行变化导致截断
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(() => regrowCorrectionTextareas());
+  if (!CSS.supports("field-sizing", "content")) {
+    let width;
+    const observer = new ResizeObserver(([item]) => {
+      if (item.contentRect.width === width) return;
+      width = item.contentRect.width;
+      fitScoreReasons();
+    });
+    observer.observe(els.draftEditor);
   }
 
   restoreFileBinding().then((restored) => {
@@ -3264,7 +3375,7 @@ function init() {
       renderSyncStatus();
     }
     restoreWorkspace(savedWorkspace);
-    regrowCorrectionTextareas();
+    fitScoreReasons();
   }).catch((error) => {
     showToast(`数据加载失败：${error.message}`, "error");
     renderAll();

@@ -20,8 +20,21 @@ function materialSource(entry) {
   return entry.mode === "task1" ? entry.essayType : entry.topic;
 }
 
-function materialDisplay(material) {
-  const html = safeMaterialHtml(material.contentHtml);
+function materialBodyHtml(material, entry) {
+  const html = safeMaterialHtml(material.contentHtml || "");
+  if (materialPlainText(html)) return html;
+  const plain = typeof material.plainText === "string" ? material.plainText : "";
+  if (plain.replace(/[\u200B-\u200D\uFEFF]/g, "").trim()) return textToHtml(plain);
+  const legacy = entry?.legacyBank?.[material.sourceField];
+  if (typeof legacy === "string" && material.id?.startsWith("material-v3:")) {
+    const original = migrateBank(entry.id, { [material.sourceField]: legacy })
+      .materials.find(({ id }) => id === material.id);
+    if (original) return original.contentHtml;
+  }
+  return "";
+}
+
+function materialDisplay(material, html) {
   if (material.translation || material.category === "strategy" || material.subtype === "usageNote") return { html, translation: material.translation };
   const holder = document.createElement("div");
   holder.innerHTML = html;
@@ -57,32 +70,58 @@ function materialDisplay(material) {
   return { html, translation: "" };
 }
 
-function renderMaterialCard(material, entry, inLibrary) {
+function renderMaterialCard(material, entry, inLibrary, html) {
   const id = escapeHtml(material.id);
   const topic = materialSource(entry);
   const favorite = Boolean(material.favorite);
-  const display = materialDisplay(material);
+  const display = materialDisplay(material, html);
   const type = MATERIAL_TYPES[material.category].types[material.subtype];
   return `<article class="library-card material-card" data-material-id="${id}" data-category="${material.category}">
+    ${material.category === "strategy" ? `<h3 class="material-title">${escapeHtml(material.title || type)}</h3>` : ""}
+    ${display.html ? `<div class="material-copy">${display.html}</div>` : ""}
     <div class="material-meta">
       <span class="library-tag">${escapeHtml(topic || "未分类")}</span>
-      <span>${type}</span>
+      ${material.category !== "strategy" || material.title ? `<span>${type}</span>` : ""}
       <span>${entry.mode === "task1" ? "Task 1" : "Task 2"}</span>
     </div>
-    ${material.category === "strategy" ? `<h3 class="material-title">${escapeHtml(material.title || type)}</h3>` : ""}
-    <div class="material-copy">${display.html}</div>
     ${display.translationHtml || display.translation ? `<div class="material-detail material-translation">${display.translationHtml || escapeHtml(display.translation)}</div>` : ""}
     ${material.context ? `<div class="material-detail">使用场景 · ${escapeHtml(material.context)}</div>` : ""}
     ${material.note ? `<div class="material-detail">备注 · ${escapeHtml(material.note)}</div>` : ""}
     ${material.tags?.length ? `<div class="material-meta">${material.tags.map((tag) => `<span class="material-tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
-    <button type="button" class="material-source" data-material-action="source">来源 · ${escapeHtml(entry.title || "未命名复盘")}</button>
-    <div class="material-actions">
+    <div class="material-footer">
+      <button type="button" class="material-source" data-material-action="source">来源 · ${escapeHtml(entry.title || "未命名复盘")}</button>
+      <div class="material-actions">
       <button type="button" class="secondary-button" data-material-action="edit">编辑</button>
       <button type="button" class="secondary-button" data-material-action="favorite" aria-pressed="${favorite}">${favorite ? "已收藏" : "收藏"}</button>
       <button type="button" class="remove-button" data-material-action="delete">删除</button>
       ${inLibrary ? `<select data-material-review data-status="${material.reviewStatus}" aria-label="复习状态">${materialOptions(Object.entries(MATERIAL_REVIEW), material.reviewStatus)}</select>` : ""}
+      </div>
     </div>
   </article>`;
+}
+
+function partitionMaterialCards(materials, entries) {
+  const cards = [];
+  const missing = [];
+  for (const material of materials) {
+    const entry = entries.get(material.sourceEntryId);
+    const html = materialBodyHtml(material, entry);
+    const record = { material, entry, html };
+    (html || material.translation?.trim() ? cards : missing).push(record);
+  }
+  return { cards, missing };
+}
+
+function renderMissingMaterials(records) {
+  if (!records.length) return "";
+  return `<details class="missing-materials">
+    <summary>${records.length} 条素材缺少正文</summary>
+    <ul>${records.map(({ material, entry }) => `<li data-material-id="${escapeHtml(material.id)}">
+      <span>${escapeHtml(entry.title || "未命名复盘")} · ${escapeHtml(MATERIAL_TYPES[material.category].types[material.subtype])}</span>
+      <code>${escapeHtml(material.id)}${material.sourceField ? ` · ${escapeHtml(material.sourceField)}` : ""}</code>
+      <button type="button" class="text-button" data-material-action="edit">补写正文</button>
+    </li>`).join("")}</ul>
+  </details>`;
 }
 
 const libraryFilterIds = ["librarySearch", "libraryTask", "libraryTopic", "librarySubtype", "librarySource", "libraryReview", "libraryTag", "libraryFavorites"];
@@ -132,8 +171,11 @@ function renderDetailMaterials() {
   if (!entry) return;
   renderMaterialTabs(els.detailBankTabs, state.bankTab);
   const materials = state.materials.filter((item) => item.sourceEntryId === entry.id && item.category === state.bankTab);
-  $("#detailMaterials").innerHTML = materials.map((item) => renderMaterialCard(item, entry, false)).join("") ||
-    '<div class="empty-library">本篇还没有这类素材。</div>';
+  const { cards, missing } = partitionMaterialCards(materials, new Map([[entry.id, entry]]));
+  $("#detailMaterials").innerHTML = (cards.length
+    ? cards.map(({ material, html }) => renderMaterialCard(material, entry, false, html)).join("")
+    : '<div class="empty-library"><strong>暂无相关素材</strong><button type="button" class="text-button" data-add-material>添加素材</button></div>') +
+    renderMissingMaterials(missing);
 }
 
 function populateLibraryFilters() {
@@ -191,18 +233,22 @@ function renderLibraryContent() {
   const favorites = $("#libraryFavorites").checked;
   const tag = $("#libraryTag").value;
   const entries = new Map(state.entries.map((entry) => [entry.id, entry]));
-  const matches = state.materials.filter((item) => {
+  const filtered = state.materials.filter((item) => {
     const entry = entries.get(item.sourceEntryId);
     if (!entry || item.category !== state.libraryBankTab || (mode && entry.mode !== mode) ||
         (topic && materialSource(entry) !== topic) || (subtype && item.subtype !== subtype) ||
         (source && entry.id !== source) || (review && item.reviewStatus !== review) || (favorites && !item.favorite) ||
         (tag && !item.tags?.includes(tag))) return false;
+    return true;
+  });
+  const { cards, missing } = partitionMaterialCards(filtered, entries);
+  const matches = cards.filter(({ material, entry, html }) => {
     if (!query) return true;
-    const searchable = [item.title, item.plainText || materialPlainText(safeMaterialHtml(item.contentHtml)), item.translation, item.note,
-      item.context, ...(item.tags || []), entry.title, materialSource(entry), MATERIAL_TYPES[item.category].types[item.subtype]];
+    const searchable = [material.title, materialPlainText(html), material.plainText, material.translation, material.note,
+      material.context, ...(material.tags || []), entry.title, materialSource(entry), MATERIAL_TYPES[material.category].types[material.subtype]];
     return searchable.join(" ").toLowerCase().includes(query);
-  }).sort((a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) ||
-    getDateTime(entries.get(b.sourceEntryId).practiceDate) - getDateTime(entries.get(a.sourceEntryId).practiceDate));
+  }).sort((a, b) => Number(Boolean(b.material.favorite)) - Number(Boolean(a.material.favorite)) ||
+    getDateTime(b.entry.practiceDate) - getDateTime(a.entry.practiceDate));
 
   const pages = Math.max(1, Math.ceil(matches.length / LIBRARY_PAGE_SIZE));
   state.libraryPage = Math.min(state.libraryPage, pages);
@@ -210,11 +256,11 @@ function renderLibraryContent() {
   const hasFilters = renderActiveFilters();
   const category = MATERIAL_TYPES[state.libraryBankTab].label;
   const emptyHint = state.libraryBankTab === "strategy" ? "可从本篇思路收藏可复用的写法，也可以手动添加。" : "从作文详情收藏，或直接添加一条素材。";
-  els.libraryContent.innerHTML = items.length
-    ? `<div class="library-card-grid">${items.map((item) => renderMaterialCard(item, entries.get(item.sourceEntryId), true)).join("")}</div>`
+  els.libraryContent.innerHTML = (items.length
+    ? `<div class="library-card-grid">${items.map(({ material, entry, html }) => renderMaterialCard(material, entry, true, html)).join("")}</div>`
     : hasFilters
       ? '<div class="empty-library"><strong>没有符合条件的素材</strong><p>试试缩短关键词，或清除部分筛选条件。</p><button type="button" class="text-button" data-reset-library>重置筛选</button></div>'
-      : `<div class="empty-library"><strong>还没有${category}</strong><p>${emptyHint}</p></div>`;
+      : `<div class="empty-library"><strong>还没有${category}</strong><p>${emptyHint}</p></div>`) + renderMissingMaterials(missing);
   $("#libraryTotal").textContent = `全部 ${state.materials.length} 条素材`;
   $("#libraryResultCount").textContent = `找到 ${matches.length} 条`;
   renderLibraryPagination(pages, matches.length);
@@ -260,7 +306,7 @@ function openMaterialEditor(data = {}) {
   $("#materialSource").disabled = Boolean(data.sourceEntryId || currentEntry());
   $("#materialCategory").value = data.category || (currentEntry() ? state.bankTab : state.libraryBankTab);
   populateMaterialTypes(data.subtype);
-  $("#materialBody").innerHTML = safeMaterialHtml(data.contentHtml || "");
+  $("#materialBody").innerHTML = materialBodyHtml(data, state.entries.find(({ id }) => id === data.sourceEntryId));
   $("#materialTitle").value = data.title || "";
   $("#materialTranslation").value = data.translation || "";
   $("#materialContext").value = data.context || "";
@@ -288,15 +334,16 @@ function saveMaterial(event) {
   const form = event.currentTarget;
   const contentHtml = safeMaterialHtml($("#materialBody").innerHTML);
   const plainText = materialPlainText(contentHtml);
+  const translation = $("#materialTranslation").value.trim();
   const entry = state.entries.find(({ id }) => id === $("#materialSource").value);
-  if (!entry || !plainText) {
-    $("#materialError").textContent = "请填写素材内容并选择来源作文";
+  if (!entry || (!plainText && !translation)) {
+    $("#materialError").textContent = "请选择来源作文，并填写素材正文或中文释义";
     $("#materialError").hidden = false;
     $("#materialBody").focus();
     return;
   }
   const existing = state.materials.find(({ id }) => id === form.dataset.materialId);
-  const unchangedBody = existing && safeMaterialHtml(existing.contentHtml) === contentHtml;
+  const unchangedBody = existing && safeMaterialHtml(existing.contentHtml || "") === contentHtml;
   const title = $("#materialCategory").value === "strategy" ? $("#materialTitle").value.trim() : "";
   const material = {
     id: existing?.id || `material-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`,
@@ -304,7 +351,7 @@ function saveMaterial(event) {
     contentHtml: unchangedBody ? existing.contentHtml : contentHtml,
     plainText: unchangedBody ? existing.plainText : plainText,
     ...(title || existing?.title ? { title } : {}),
-    translation: $("#materialTranslation").value.trim(), context: $("#materialContext").value.trim(),
+    translation, context: $("#materialContext").value.trim(),
     note: $("#materialNote").value.trim(),
     tags: [...new Set($("#materialTags").value.split(/[,，\n]+/).map((tag) => tag.trim()).filter(Boolean))],
     sourceEntryId: entry.id, sourceField: form.dataset.sourceField || "manual",
@@ -435,6 +482,10 @@ function bindMaterialEvents() {
   });
   for (const list of [els.libraryContent, $("#detailMaterials")]) {
     list.addEventListener("click", (event) => {
+      if (event.target.closest("[data-add-material]")) {
+        openMaterialEditor();
+        return;
+      }
       if (event.target.closest("[data-reset-library]")) {
         resetLibraryFilters();
         $("#librarySearch").focus();

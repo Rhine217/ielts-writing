@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=29" />
+    <link rel="stylesheet" href="styles.css?v=30" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -62,12 +62,15 @@
           <div class="entry-list" id="entryList" aria-label="作文列表"></div>
 
           <div class="sidebar-footer">
-            <button class="primary-button" id="newEntryBtn" type="button">新建复盘</button>
+            <button class="secondary-button" id="newEntryBtn" type="button">新建复盘</button>
             <button class="secondary-button" id="openLibraryBtn" type="button">素材库复习</button>
             <button class="secondary-button" id="dataToolsBtn" type="button">数据文件与备份</button>
           </div>
         </div>
       </aside>
+      <div class="sidebar-resize" id="sidebarResize" role="separator" aria-label="作文目录宽度"
+        aria-orientation="vertical" aria-controls="essaySidebar" aria-valuemin="220" aria-valuemax="500"
+        aria-valuenow="290" tabindex="0" title="拖动调整宽度，双击恢复默认"></div>
 
       <main class="workspace" id="workspace" aria-busy="true" inert>
         <p class="startup-status" id="startupStatus" role="status">正在读取复盘数据…</p>
@@ -159,7 +162,15 @@
             </div>
           </header>
 
-          <section class="panel prompt-card" id="promptCard">
+          <nav class="detail-nav" aria-label="复盘章节">
+            <a href="#promptCard">题目</a>
+            <a href="#essayVersions">原文与范文</a>
+            <a href="#evaluationPanel">评语</a>
+            <a href="#correctionsPanel">错误标注</a>
+            <a href="#materialsPanel">素材沉淀</a>
+            <a href="#thinkingPanel">思路与结构</a>
+          </nav>
+          <section class="panel prompt-card" id="promptCard" tabindex="-1">
             <div class="prompt-left">
               <label class="field">
                 <span>作文原题</span>
@@ -199,7 +210,7 @@
             </div>
           </section>
 
-          <section class="review-grid">
+          <section class="review-grid" id="essayVersions" tabindex="-1">
             <article class="panel essay-panel">
               <div class="panel-header">
                 <div>
@@ -217,26 +228,31 @@
               </div>
               <div class="score-strip" id="draftScoreStrip">
                 <label class="dim-field" title="Task Response · 任务完成度：是否完整回应题目的每项要求">
-                  <span class="dim-label">TR</span>
+                  <span class="dim-label" data-task-score>TR</span>
                   <select id="draftScoreTR"></select>
-                  <textarea class="dim-reason" id="draftReasonTR" rows="1" placeholder="打分依据"></textarea>
                 </label>
                 <label class="dim-field" title="Coherence &amp; Cohesion · 连贯与衔接：段落组织与连接手段">
                   <span class="dim-label">CC</span>
                   <select id="draftScoreCC"></select>
-                  <textarea class="dim-reason" id="draftReasonCC" rows="1" placeholder="打分依据"></textarea>
                 </label>
                 <label class="dim-field" title="Lexical Resource · 词汇资源：用词广度与准确性">
                   <span class="dim-label">LR</span>
                   <select id="draftScoreLR"></select>
-                  <textarea class="dim-reason" id="draftReasonLR" rows="1" placeholder="打分依据"></textarea>
                 </label>
                 <label class="dim-field" title="Grammatical Range &amp; Accuracy · 语法广度与准确性">
                   <span class="dim-label">GRA</span>
                   <select id="draftScoreGRA"></select>
-                  <textarea class="dim-reason" id="draftReasonGRA" rows="1" placeholder="打分依据"></textarea>
                 </label>
               </div>
+              <details class="score-reasons" id="draftReasonsPanel">
+                <summary>评分依据</summary>
+                <div class="score-reason-fields">
+                  <label class="field"><span data-task-score>TR</span><textarea class="dim-reason" id="draftReasonTR" rows="1" placeholder="打分依据"></textarea></label>
+                  <label class="field"><span>CC</span><textarea class="dim-reason" id="draftReasonCC" rows="1" placeholder="打分依据"></textarea></label>
+                  <label class="field"><span>LR</span><textarea class="dim-reason" id="draftReasonLR" rows="1" placeholder="打分依据"></textarea></label>
+                  <label class="field"><span>GRA</span><textarea class="dim-reason" id="draftReasonGRA" rows="1" placeholder="打分依据"></textarea></label>
+                </div>
+              </details>
               <div id="draftEditor" class="rich-editor" contenteditable="true" spellcheck="false"></div>
             </article>
 
@@ -247,18 +263,19 @@
                   <h2>范文版本</h2>
                 </div>
                 <div class="panel-tools">
-                  <label class="score-field" title="总分（四维之外的总分，可留空）">
+                  <span class="model-score-empty" id="modelScoreEmpty" hidden>未评分 <button class="text-button" id="addModelScore" type="button">添加评分</button></span>
+                  <label class="score-field" data-model-score-control title="总分（四维之外的总分，可留空）">
                     <span>总分</span>
                     <select id="modelScore"></select>
                   </label>
-                  <button class="score-avg" id="modelScoreAvg" type="button" title="四维均分 · 点击填入总分">四维均分 –</button>
+                  <button class="score-avg" id="modelScoreAvg" data-model-score-control type="button" title="四维均分 · 点击填入总分">四维均分 –</button>
                   <span class="count-pill" id="modelStats">0 words</span>
                   <button class="secondary-button" id="typingBtn" type="button" title="选择范文进行打字练习">打字练习</button>
                 </div>
               </div>
-              <div class="score-strip" id="modelScoreStrip">
+              <div class="score-strip" id="modelScoreStrip" data-model-score-control>
                 <label class="dim-field" title="Task Response · 任务完成度">
-                  <span class="dim-label">TR</span>
+                  <span class="dim-label" data-task-score>TR</span>
                   <select id="modelScoreTR"></select>
                 </label>
                 <label class="dim-field" title="Coherence &amp; Cohesion · 连贯与衔接">
@@ -279,7 +296,7 @@
           </section>
           <div class="highlight-legend" id="highlightLegend"></div>
 
-          <article class="panel evaluation-panel" id="evaluationPanel">
+          <article class="panel evaluation-panel" id="evaluationPanel" tabindex="-1">
             <div class="panel-header">
               <div>
                 <p class="eyebrow">Evaluation</p>
@@ -293,7 +310,7 @@
           </article>
 
           <section class="analysis-grid">
-            <article class="panel corrections-panel">
+            <article class="panel corrections-panel" id="correctionsPanel" tabindex="-1">
               <details open>
                 <summary>
                   <span>
@@ -307,11 +324,11 @@
               </details>
             </article>
 
-            <article class="panel language-panel">
+            <article class="panel language-panel" id="materialsPanel" tabindex="-1">
               <details open>
                 <summary>
                   <span>
-                    <em class="eyebrow">Language Bank</em>
+                    <em class="eyebrow">Materials</em>
                     <strong>素材沉淀</strong>
                   </span>
                   <button class="secondary-button" id="addDetailMaterial" type="button">添加素材</button>
@@ -321,7 +338,7 @@
               </details>
             </article>
 
-            <article class="panel thinking-panel">
+            <article class="panel thinking-panel" id="thinkingPanel" tabindex="-1">
               <details open>
                 <summary>
                   <span>
@@ -377,25 +394,26 @@
 
     <template id="correctionTemplate">
       <article class="correction-item">
-        <label>
-          <span>原句/问题</span>
-          <div class="rich-field" data-correction="source" contenteditable="true" spellcheck="false"></div>
-        </label>
-        <label>
-          <span>修改建议</span>
-          <div class="rich-field" data-correction="fix" contenteditable="true" spellcheck="false"></div>
-        </label>
-        <label>
-          <span>批注</span>
-          <div class="rich-field" data-correction="comment" contenteditable="true" spellcheck="false"></div>
-        </label>
-        <label>
-          <span>问题类型</span>
+        <label class="correction-kind field">
+          <span>错误类型</span>
           <select data-correction="kind"></select>
+        </label>
+        <label class="correction-source">
+          <span>原句/问题</span>
+          <div class="rich-field" data-correction="source" contenteditable="true" spellcheck="false" data-placeholder="输入原句或问题"></div>
+        </label>
+        <label class="correction-fix">
+          <span>修改建议</span>
+          <div class="rich-field" data-correction="fix" contenteditable="true" spellcheck="false" data-placeholder="输入修改建议"></div>
+        </label>
+        <label class="correction-comment">
+          <span>批注</span>
+          <div class="rich-field" data-correction="comment" contenteditable="true" spellcheck="false" data-placeholder="添加批注或修改原因"></div>
         </label>
         <div class="correction-actions">
           <button class="secondary-button" data-save-correction-material type="button">收藏到素材库</button>
-          <button class="remove-button" data-remove-correction type="button" title="删除此条">×</button>
+          <button class="secondary-button" data-edit-correction type="button">编辑</button>
+          <button class="remove-button" data-remove-correction type="button">删除</button>
         </div>
       </article>
     </template>
@@ -404,7 +422,7 @@
       <div class="eval-section">
         <label class="eval-section-header">
           <input class="eval-section-title" value="" placeholder="段落标题" />
-          <button class="remove-button eval-remove-btn" data-remove-eval type="button" title="删除此段落">×</button>
+          <button class="remove-button eval-remove-btn" data-remove-eval type="button" aria-label="删除评语段落">删除</button>
         </label>
         <div class="eval-section-body rich-field" contenteditable="true" spellcheck="false" data-placeholder="写下评语…"></div>
       </div>
@@ -506,8 +524,8 @@
         </div>
       </form>
     </dialog>
-    <script src="materials.js?v=29"></script>
-    <script src="material-ui.js?v=29"></script>
-    <script src="app.js?v=29"></script>
+    <script src="materials.js?v=30"></script>
+    <script src="material-ui.js?v=30"></script>
+    <script src="app.js?v=30"></script>
   </body>
 </html>
