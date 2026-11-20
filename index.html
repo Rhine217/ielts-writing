@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=30" />
+    <link rel="stylesheet" href="styles.css?v=31" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -392,8 +392,35 @@
       <button id="clearHighlightBtn" type="button">清除高亮</button>
     </div>
 
-    <template id="correctionTemplate">
+    <template id="correctionReadTemplate">
       <article class="correction-item">
+        <div class="correction-header">
+          <span class="correction-badge"></span>
+          <div class="correction-actions">
+            <button class="text-button compact-action" data-edit-correction type="button">编辑</button>
+            <details class="entry-actions-menu detail-item-menu">
+              <summary class="text-button compact-action" aria-label="错误标注更多操作">更多</summary>
+              <div class="entry-actions-popover">
+                <button class="secondary-button" data-save-correction-material type="button">收藏到素材库</button>
+                <button class="remove-button" data-remove-correction type="button">删除标注</button>
+              </div>
+            </details>
+          </div>
+        </div>
+        <div class="correction-pair">
+          <div><span class="correction-caption">原句</span><div class="correction-text" data-correction-read="source"></div></div>
+          <div><span class="correction-caption">修改</span><div class="correction-text" data-correction-read="fix"></div></div>
+        </div>
+        <div class="correction-note">
+          <span class="sr-only">批注</span>
+          <div class="correction-note-text" data-correction-read="comment"></div>
+          <button class="text-button compact-action" type="button" data-toggle-correction-note aria-expanded="false" hidden>展开全文</button>
+        </div>
+      </article>
+    </template>
+
+    <template id="correctionTemplate">
+      <article class="correction-item correction-editor">
         <label class="correction-kind field">
           <span>错误类型</span>
           <select data-correction="kind"></select>
@@ -411,19 +438,18 @@
           <div class="rich-field" data-correction="comment" contenteditable="true" spellcheck="false" data-placeholder="添加批注或修改原因"></div>
         </label>
         <div class="correction-actions">
-          <button class="secondary-button" data-save-correction-material type="button">收藏到素材库</button>
-          <button class="secondary-button" data-edit-correction type="button">编辑</button>
-          <button class="remove-button" data-remove-correction type="button">删除</button>
+          <button class="secondary-button" data-cancel-correction type="button">取消</button>
+          <button class="primary-button" data-commit-correction type="button">保存</button>
         </div>
       </article>
     </template>
 
     <template id="evalSectionTemplate">
       <div class="eval-section">
-        <label class="eval-section-header">
-          <input class="eval-section-title" value="" placeholder="段落标题" />
-          <button class="remove-button eval-remove-btn" data-remove-eval type="button" aria-label="删除评语段落">删除</button>
-        </label>
+        <div class="eval-section-header">
+          <input class="eval-section-title" value="" placeholder="段落标题" aria-label="评语段落标题" />
+          <button class="text-button compact-action eval-remove-btn" data-remove-eval type="button" aria-label="删除评语段落">删除</button>
+        </div>
         <div class="eval-section-body rich-field" contenteditable="true" spellcheck="false" data-placeholder="写下评语…"></div>
       </div>
     </template>
@@ -524,8 +550,8 @@
         </div>
       </form>
     </dialog>
-    <script src="materials.js?v=30"></script>
-    <script src="material-ui.js?v=30"></script>
-    <script src="app.js?v=30"></script>
+    <script src="materials.js?v=31"></script>
+    <script src="material-ui.js?v=31"></script>
+    <script src="app.js?v=31"></script>
   </body>
 </html>

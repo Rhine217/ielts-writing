@@ -1687,6 +1687,7 @@ function showImportError(message) {
 }
 
 function clearReviewContent(entry) {
+  if (correctionDraft?.entry === entry) correctionDraft = null;
   entry.draftScore = "";
   entry.draftScores = {};
   entry.draftReasons = {};
@@ -2272,7 +2273,7 @@ function renderCorrectionFilterBar() {
   const allOn = CORRECTION_KINDS.every((item) => state.correctionFilter[item.kind] !== false);
   els.correctionFilterBar.innerHTML = `
     <button type="button" class="cf-chip ${allOn ? "active" : ""}" data-kind-all title="全部显示">
-      <span class="cf-name">全部</span><b>${entry?.corrections.length || 0}</b>
+      <span class="cf-name">全部</span><b>${entry?.corrections?.length || 0}</b>
     </button>
     ${CORRECTION_KINDS.map((item) => {
       const on = state.correctionFilter[item.kind] !== false;
@@ -2285,42 +2286,100 @@ function renderCorrectionFilterBar() {
   `;
 }
 
+let correctionDraft = null;
+const correctionNotes = new ResizeObserver((entries) => {
+  for (const { target } of entries) {
+    const note = target.closest(".correction-note");
+    if (!note || note.classList.contains("expanded")) continue;
+    note.querySelector("[data-toggle-correction-note]").hidden = target.scrollHeight <= target.clientHeight + 1;
+  }
+});
+
+function currentCorrectionDraft() {
+  return correctionDraft?.entry === currentEntry() ? correctionDraft : null;
+}
+
+function openCorrectionEditor(original, seed = { source: "", fix: "", comment: "", kind: "语法" }) {
+  const entry = currentEntry();
+  if (!entry) return;
+  if (correctionDraft && state.entries.includes(correctionDraft.entry) &&
+      (!correctionDraft.original || Object.keys(correctionDraft.edits).length) &&
+      !window.confirm("放弃尚未保存的错误标注修改吗？")) return;
+  correctionDraft = { entry, original, initial: original || seed, edits: {} };
+  renderCorrections();
+  els.correctionList.querySelector(".correction-editor [data-correction=source]")?.focus();
+}
+
+function renderCorrectionEditor(draft, index) {
+  const correction = { ...draft.initial, ...draft.edits };
+  const node = els.correctionTemplate.content.firstElementChild.cloneNode(true);
+  node.dataset.index = index;
+  node.style.setProperty("--kind-color", kindColor(correction.kind));
+  for (const field of node.querySelectorAll(".rich-field[data-correction]")) {
+    field.innerHTML = safeMaterialHtml(toRichHtml(correction[field.dataset.correction] || ""));
+  }
+  const kindSelect = node.querySelector('[data-correction="kind"]');
+  const kinds = [...new Set([...CORRECTION_KINDS.map(({ kind }) => kind), correction.kind])];
+  for (const kind of kinds) kindSelect.add(new Option(kind, kind));
+  kindSelect.value = correction.kind;
+  els.correctionList.appendChild(node);
+  enhanceSelect(kindSelect);
+}
+
+function renderCorrectionRead(correction, index) {
+  const node = $("#correctionReadTemplate").content.firstElementChild.cloneNode(true);
+  node.dataset.index = index;
+  node.dataset.kind = correction.kind;
+  node.style.setProperty("--kind-color", kindColor(correction.kind));
+  node.querySelector(".correction-badge").textContent = correction.kind || "其他";
+  for (const field of node.querySelectorAll("[data-correction-read]")) {
+    const key = field.dataset.correctionRead;
+    const html = safeMaterialHtml(toRichHtml(correction[key] || ""));
+    const hasText = Boolean(materialPlainText(html));
+    field.innerHTML = hasText ? html : key === "comment" ? "" : "—";
+    if (key === "comment") field.closest(".correction-note").hidden = !hasText;
+  }
+  els.correctionList.appendChild(node);
+  if (!node.querySelector(".correction-note").hidden) {
+    const comment = node.querySelector(".correction-note-text");
+    comment.id = `correction-note-${index}`;
+    node.querySelector("[data-toggle-correction-note]").setAttribute("aria-controls", comment.id);
+    correctionNotes.observe(comment);
+  }
+}
+
 function renderCorrections() {
   const entry = currentEntry();
   renderCorrectionFilterBar();
+  correctionNotes.disconnect();
   els.correctionList.innerHTML = "";
-
-  const visible = [];
-  (entry?.corrections || []).forEach((correction, index) => {
-    if (state.correctionFilter[correction.kind] !== false) visible.push({ correction, index });
-  });
-
+  pruneInactiveSelects();
   if (!entry) return;
 
-  if (!entry.corrections?.length) {
+  if (correctionDraft?.entry === entry && correctionDraft.original && !entry.corrections?.includes(correctionDraft.original)) {
+    correctionDraft = null;
+  }
+  const draft = currentCorrectionDraft();
+  const visible = [];
+  (entry?.corrections || []).forEach((correction, index) => {
+    if (state.correctionFilter[correction.kind] !== false || correction === draft?.original) visible.push({ correction, index });
+  });
+
+  if (!entry.corrections?.length && !draft) {
     els.correctionList.innerHTML = `<div class="empty-corrections">还没有错误标注。点击「添加」，或用鼠标选中作文里的文字快速加入。</div>`;
     return;
   }
 
-  if (!visible.length) {
+  if (!visible.length && !draft) {
     els.correctionList.innerHTML = `<div class="empty-corrections">当前筛选已隐藏全部标注，点上方「全部」恢复显示。</div>`;
     return;
   }
 
   visible.forEach(({ correction, index }) => {
-    const node = els.correctionTemplate.content.firstElementChild.cloneNode(true);
-    node.dataset.index = index;
-    node.dataset.kind = correction.kind;
-    node.style.setProperty("--kind-color", kindColor(correction.kind));
-    node.querySelector('[data-correction="source"]').innerHTML = safeMaterialHtml(toRichHtml(correction.source || ""));
-    node.querySelector('[data-correction="fix"]').innerHTML = safeMaterialHtml(toRichHtml(correction.fix || ""));
-    node.querySelector('[data-correction="comment"]').innerHTML = safeMaterialHtml(toRichHtml(correction.comment || ""));
-    const kindSelect = node.querySelector('[data-correction="kind"]');
-    kindSelect.innerHTML = CORRECTION_KINDS.map((item) => `<option value="${item.kind}">${item.kind}</option>`).join("");
-    kindSelect.value = correction.kind;
-    els.correctionList.appendChild(node);
-    enhanceSelect(kindSelect);
+    if (correction === draft?.original) renderCorrectionEditor(draft, index);
+    else renderCorrectionRead(correction, index);
   });
+  if (draft && !draft.original) renderCorrectionEditor(draft, -1);
 }
 
 function renderHighlightLegend() {
@@ -2384,9 +2443,12 @@ function saveEntryField(field) {
       if (field.matches(".eval-section-title")) item.title = field.value.trim();
       if (field.matches(".eval-section-body")) item.body = safeMaterialHtml(field.innerHTML);
     }
-    const correction = field.closest(".correction-item");
-    if (correction && field.matches(".rich-field[data-correction]")) {
-      entry.corrections[Number(correction.dataset.index)][field.dataset.correction] = safeMaterialHtml(field.innerHTML);
+    const draft = currentCorrectionDraft();
+    if (draft && field.closest(".correction-editor") && field.matches(".rich-field[data-correction]")) {
+      const key = field.dataset.correction;
+      const html = safeMaterialHtml(field.innerHTML);
+      if (html === safeMaterialHtml(toRichHtml(draft.initial[key] || ""))) delete draft.edits[key];
+      else draft.edits[key] = html;
     }
   }
 }
@@ -2579,6 +2641,9 @@ function bindWorkspaceEvents() {
   });
   document.addEventListener("click", (event) => {
     if (!event.target.closest("#entryMoreMenu")) $("#entryMoreMenu").open = false;
+    for (const menu of $$(".detail-item-menu[open]")) {
+      if (!menu.contains(event.target)) menu.open = false;
+    }
   });
 }
 
@@ -2953,6 +3018,11 @@ function bindEvents() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      const menu = event.target.closest?.(".detail-item-menu[open]");
+      if (menu) {
+        menu.open = false;
+        menu.querySelector("summary").focus({ preventScroll: true });
+      }
       hideToolbar();
       hideHighlightToolbar();
       closeImageModal();
@@ -3022,8 +3092,7 @@ function bindEvents() {
 
   $("#addCorrectionBtn").addEventListener("click", (event) => {
     event.preventDefault();
-    addCorrection({ source: "", fix: "", comment: "", kind: "语法" });
-    els.correctionList.querySelector(".correction-item:last-child [data-correction=source]")?.focus();
+    openCorrectionEditor(null);
   });
 
   // —— 错误标注筛选 ——
@@ -3042,35 +3111,64 @@ function bindEvents() {
 
   els.correctionList.addEventListener("input", (event) => {
     saveEntryField(event.target);
-    persist();
   });
 
   els.correctionList.addEventListener("change", (event) => {
-    const item = event.target.closest(".correction-item");
-    if (!item || event.target.dataset.correction !== "kind") return;
-    const correction = currentEntry().corrections[Number(item.dataset.index)];
-    if (!correction) return;
-    const newKind = event.target.value;
-    correction.kind = newKind;
-    persist();
-    renderCorrections();
+    const draft = currentCorrectionDraft();
+    if (!draft || !event.target.matches('.correction-editor [data-correction="kind"]')) return;
+    const kind = event.target.value;
+    if (kind === draft.initial.kind) delete draft.edits.kind;
+    else draft.edits.kind = kind;
+    event.target.closest(".correction-editor").style.setProperty("--kind-color", kindColor(kind));
   });
 
   els.correctionList.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-remove-correction], [data-save-correction-material], [data-edit-correction]");
+    const button = event.target.closest("button");
     const entry = currentEntry();
-    if (!button || !entry) return;
-    const item = button.closest(".correction-item");
+    const item = button?.closest(".correction-item");
+    if (!item || !entry) return;
     const index = Number(item.dataset.index);
+    const correction = entry.corrections?.[index];
+    if (button.hasAttribute("data-toggle-correction-note")) {
+      const expanded = button.closest(".correction-note").classList.toggle("expanded");
+      button.textContent = expanded ? "收起全文" : "展开全文";
+      button.setAttribute("aria-expanded", String(expanded));
+      return;
+    }
+    if (button.hasAttribute("data-cancel-correction") || button.hasAttribute("data-commit-correction")) {
+      const draft = currentCorrectionDraft();
+      if (!draft) return;
+      let focusIndex = index;
+      closeToolbarFully();
+      hideHighlightToolbar();
+      correctionDraft = null;
+      if (button.hasAttribute("data-commit-correction")) {
+        if (draft.original) Object.assign(draft.original, draft.edits);
+        else {
+          const saved = { ...draft.initial, ...draft.edits };
+          focusIndex = (entry.corrections ||= []).push(saved) - 1;
+          state.correctionFilter[saved.kind] = true;
+        }
+        persist();
+        renderMetrics();
+        showToast("错误标注已保存");
+      }
+      renderCorrections();
+      (els.correctionList.querySelector(`.correction-item[data-index="${focusIndex}"] [data-edit-correction]`) ||
+        $("#addCorrectionBtn")).focus({ preventScroll: true });
+      return;
+    }
+    if (!correction) return;
     if (button.hasAttribute("data-edit-correction")) {
-      item.querySelector("[data-correction=source]").focus();
+      openCorrectionEditor(correction);
       return;
     }
     if (button.hasAttribute("data-save-correction-material")) {
-      openMaterialFromCorrection(entry.corrections[index], entry);
+      button.closest("details").open = false;
+      openMaterialFromCorrection(correction, entry);
       return;
     }
-    if (!window.confirm("确定删除这条错误标注吗？")) return;
+    if (!button.hasAttribute("data-remove-correction") || !window.confirm("确定删除这条错误标注吗？")) return;
     entry.corrections.splice(index, 1);
     persist();
     renderCorrections();

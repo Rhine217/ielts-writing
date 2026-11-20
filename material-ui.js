@@ -76,6 +76,39 @@ function renderMaterialCard(material, entry, inLibrary, html) {
   const favorite = Boolean(material.favorite);
   const display = materialDisplay(material, html);
   const type = MATERIAL_TYPES[material.category].types[material.subtype];
+  const translationHtml = display.translationHtml || escapeHtml(display.translation || "");
+  if (!inLibrary) {
+    const strategy = material.category === "strategy";
+    const title = strategy ? `<h3 class="material-title">${escapeHtml(material.title || type)}</h3>` : "";
+    return `<article class="library-card material-card material-compact" data-material-id="${id}" data-category="${material.category}">
+      <div class="material-compact-header">
+        <div class="material-compact-heading">
+          ${title || (display.html ? `<div class="material-copy">${display.html}</div>` : `<div class="material-copy material-translation">${translationHtml}</div>`)}
+          ${!strategy || material.title ? `<span class="material-tag">${type}</span>` : ""}
+        </div>
+        <div class="material-actions">
+          <button class="text-button compact-action material-inline-edit" type="button" data-material-action="edit">编辑</button>
+          <button class="text-button compact-action material-favorite" type="button" data-material-action="favorite"
+            title="${favorite ? "取消收藏" : "收藏素材"}" aria-label="收藏素材" aria-pressed="${favorite}">${favorite ? "★" : "☆"}</button>
+          <details class="entry-actions-menu detail-item-menu">
+            <summary class="text-button compact-action" aria-label="素材更多操作">更多</summary>
+            <div class="entry-actions-popover">
+              <button class="secondary-button material-menu-edit" type="button" data-material-action="edit">编辑素材</button>
+              <button class="remove-button" type="button" data-material-action="delete">删除素材</button>
+            </div>
+          </details>
+        </div>
+      </div>
+      ${strategy && display.html ? `<div class="material-copy">${display.html}</div>` : ""}
+      ${(strategy || display.html) && translationHtml ? `<div class="material-detail material-translation">${translationHtml}</div>` : ""}
+      ${material.context || material.note || material.tags?.length ? `<details class="material-extra">
+        <summary class="text-button compact-action">补充信息</summary>
+        ${material.context ? `<div class="material-detail">使用场景 · ${escapeHtml(material.context)}</div>` : ""}
+        ${material.note ? `<div class="material-detail">备注 · ${escapeHtml(material.note)}</div>` : ""}
+        ${material.tags?.length ? `<div class="material-meta">${material.tags.map((tag) => `<span class="material-tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
+      </details>` : ""}
+    </article>`;
+  }
   return `<article class="library-card material-card" data-material-id="${id}" data-category="${material.category}">
     ${material.category === "strategy" ? `<h3 class="material-title">${escapeHtml(material.title || type)}</h3>` : ""}
     ${display.html ? `<div class="material-copy">${display.html}</div>` : ""}
@@ -84,7 +117,7 @@ function renderMaterialCard(material, entry, inLibrary, html) {
       ${material.category !== "strategy" || material.title ? `<span>${type}</span>` : ""}
       <span>${entry.mode === "task1" ? "Task 1" : "Task 2"}</span>
     </div>
-    ${display.translationHtml || display.translation ? `<div class="material-detail material-translation">${display.translationHtml || escapeHtml(display.translation)}</div>` : ""}
+    ${translationHtml ? `<div class="material-detail material-translation">${translationHtml}</div>` : ""}
     ${material.context ? `<div class="material-detail">使用场景 · ${escapeHtml(material.context)}</div>` : ""}
     ${material.note ? `<div class="material-detail">备注 · ${escapeHtml(material.note)}</div>` : ""}
     ${material.tags?.length ? `<div class="material-meta">${material.tags.map((tag) => `<span class="material-tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
@@ -94,7 +127,7 @@ function renderMaterialCard(material, entry, inLibrary, html) {
       <button type="button" class="secondary-button" data-material-action="edit">编辑</button>
       <button type="button" class="secondary-button" data-material-action="favorite" aria-pressed="${favorite}">${favorite ? "已收藏" : "收藏"}</button>
       <button type="button" class="remove-button" data-material-action="delete">删除</button>
-      ${inLibrary ? `<select data-material-review data-status="${material.reviewStatus}" aria-label="复习状态">${materialOptions(Object.entries(MATERIAL_REVIEW), material.reviewStatus)}</select>` : ""}
+      <select data-material-review data-status="${material.reviewStatus}" aria-label="复习状态">${materialOptions(Object.entries(MATERIAL_REVIEW), material.reviewStatus)}</select>
       </div>
     </div>
   </article>`;
@@ -366,7 +399,10 @@ function saveMaterial(event) {
   }
   $("#materialDialog").close();
   refreshMaterials();
-  document.querySelector(`[data-material-id="${CSS.escape(material.id)}"] [data-material-action="edit"]`)?.focus({ preventScroll: true });
+  const card = document.querySelector(`.material-card[data-material-id="${CSS.escape(material.id)}"]`);
+  const edit = card?.querySelector('[data-material-action="edit"]');
+  const focus = edit?.getClientRects().length ? edit : card?.querySelector(".detail-item-menu summary");
+  focus?.focus({ preventScroll: true });
   showToast(existing ? "素材已保存" : "已添加到素材库");
 }
 
