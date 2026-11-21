@@ -117,7 +117,6 @@ const STORAGE_KEY = "ielts-writing-review-data-v4";
 const LEGACY_KEYS = ["ielts-writing-review-v4", "ielts-writing-review-v3", "ielts-writing-review-v2", "ielts-writing-review-v1"];
 const PREF_KEY = "ielts-writing-review-preferences-v2";
 const DATA_VERSION = 4;
-const LIBRARY_PAGE_SIZE = 6;
 const SUMMARY_DEFAULT =
   "大作文：先判断题型，再决定段落任务。单边讨论要立场清晰，双边讨论要两边都回应，问题措施要原因和措施对应，复合问题要逐问回答。\n\n小作文：先写总览，再分组写细节。不要一上来堆数字，先看最高、最低、变化最大、趋势相反。\n\n考前提醒：少写空泛词，多写具体动作；注意 government / environment / convenient / comparison 这些易错拼写。";
 
@@ -641,7 +640,7 @@ class CustomSelect {
       if (select !== this) select.close();
     });
     this.buildPanel();
-    document.body.appendChild(this.panel);
+    (this.wrapper.closest("dialog[open]") || document.body).appendChild(this.panel);
     this.wrapper.classList.add("open");
     this.trigger.setAttribute("aria-expanded", "true");
     this.positionPanel();
@@ -2200,17 +2199,6 @@ function showLibrary() {
   rememberWorkspace();
 }
 
-function renderLibraryPagination(pageCount, total) {
-  els.libraryPagination.innerHTML =
-    total > LIBRARY_PAGE_SIZE
-      ? `
-        <button class="secondary-button" data-library-page="prev" ${state.libraryPage === 1 ? "disabled" : ""}>上一页</button>
-        <span>第 ${state.libraryPage} / ${pageCount} 页 · 共 ${total} 条</span>
-        <button class="secondary-button" data-library-page="next" ${state.libraryPage === pageCount ? "disabled" : ""}>下一页</button>
-      `
-      : "";
-}
-
 function renderTaskImage(entry) {
   els.taskImagePreview.classList.toggle("empty", !entry.taskImage);
   els.taskImagePreview.disabled = !entry.taskImage;
@@ -2795,15 +2783,6 @@ function bindEvents() {
   });
   els.openLibraryBtn.addEventListener("click", showLibrary);
   els.libraryHomeBtn.addEventListener("click", showHome);
-
-  els.libraryPagination.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-library-page]");
-    if (!button) return;
-    state.libraryPage += button.dataset.libraryPage === "next" ? 1 : -1;
-    renderLibraryContent();
-    els.libraryContent.scrollIntoView({ block: "start" });
-    els.libraryPagination.querySelector(`[data-library-page="${button.dataset.libraryPage}"]:not(:disabled)`)?.focus({ preventScroll: true });
-  });
 
   els.editSummaryBtn.addEventListener("click", () => {
     state.editingSummary = true;

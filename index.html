@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=31" />
+    <link rel="stylesheet" href="styles.css?v=32" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -118,7 +118,13 @@
           </header>
 
           <div class="library-controls">
-            <label class="field material-search"><span class="sr-only">搜索素材</span><input id="librarySearch" type="search" placeholder="搜索英文、中文、标签或备注" /></label>
+            <div class="library-search-row">
+              <label class="field material-search"><span class="sr-only">搜索素材</span><input id="librarySearch" type="search" placeholder="搜索表达、释义、标签或来源作文" /></label>
+              <div class="library-view-switch" id="libraryViewSwitch" role="group" aria-label="素材显示方式">
+                <button class="segment" type="button" data-library-view="grid" aria-pressed="true">卡片</button>
+                <button class="segment" type="button" data-library-view="list" aria-pressed="false">列表</button>
+              </div>
+            </div>
             <div class="library-bank-tabs note-tabs" id="libraryBankTabs" role="tablist" aria-label="素材库分类"></div>
             <details class="material-filter-disclosure" id="libraryFilterDisclosure">
               <summary><span>筛选 <span class="filter-active-count" id="libraryFilterCount" hidden></span></span></summary>
@@ -139,7 +145,7 @@
             </div>
           </div>
           <div class="library-content" id="libraryContent"></div>
-          <div class="library-pagination" id="libraryPagination"></div>
+          <nav class="library-pagination" id="libraryPagination" aria-label="素材分页"></nav>
         </section>
 
         <section class="detail-view hidden" id="detailView">
@@ -529,6 +535,15 @@
       <p class="dialog-hint">v3 文件以只读方式导入并在浏览器中迁移。导出和备份使用 v4 JSON。</p>
     </dialog>
 
+    <dialog class="app-dialog library-drawer" id="libraryDrawer" aria-labelledby="libraryDrawerTitle">
+      <header class="dialog-heading">
+        <h2 id="libraryDrawerTitle">素材详情</h2>
+        <button class="icon-button" id="closeLibraryDrawer" type="button" aria-label="关闭素材详情" autofocus>×</button>
+      </header>
+      <div class="library-drawer-content" id="libraryDrawerContent"></div>
+      <footer class="library-drawer-actions" id="libraryDrawerActions"></footer>
+    </dialog>
+
     <dialog class="app-dialog material-dialog" id="materialDialog" aria-labelledby="materialEditorTitle">
       <form id="materialForm">
         <div class="dialog-heading"><h2 id="materialEditorTitle">添加素材</h2><button class="icon-button" id="materialClose" type="button" aria-label="关闭">×</button></div>
@@ -550,8 +565,8 @@
         </div>
       </form>
     </dialog>
-    <script src="materials.js?v=31"></script>
-    <script src="material-ui.js?v=31"></script>
-    <script src="app.js?v=31"></script>
+    <script src="materials.js?v=32"></script>
+    <script src="material-ui.js?v=32"></script>
+    <script src="app.js?v=32"></script>
   </body>
 </html>

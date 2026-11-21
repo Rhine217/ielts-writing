@@ -34,13 +34,16 @@ function materialBodyHtml(material, entry) {
   return "";
 }
 
-function materialDisplay(material, html) {
+const libraryBilingualDivider = /^[A-Za-z][^\p{Script=Han}]*?[:：]\s*(?=(?:[A-Z]\s*)?\p{Script=Han})/u;
+
+function materialDisplay(material, html, { library = false } = {}) {
   if (material.translation || material.category === "strategy" || material.subtype === "usageNote") return { html, translation: material.translation };
   const holder = document.createElement("div");
   holder.innerHTML = html;
   const text = materialPlainText(html);
   if (text.includes("\n") || holder.querySelector("br, div, p, ul, ol, li")) return { html, translation: "" };
-  const translationStart = text.match(/^[A-Za-z][^\p{Script=Han}]*?(?:[:：]\s*|\s+)(?=\p{Script=Han})/u);
+  const translationStart = (library && text.match(libraryBilingualDivider)) ||
+    text.match(/^[A-Za-z][^\p{Script=Han}]*?(?:[:：]\s*|\s+)(?=\p{Script=Han})/u);
   if (!translationStart) return { html, translation: "" };
   const english = text.slice(0, translationStart[0].length).trimEnd().replace(/[:：]$/, "");
   const translation = text.slice(translationStart[0].length);
@@ -70,17 +73,15 @@ function materialDisplay(material, html) {
   return { html, translation: "" };
 }
 
-function renderMaterialCard(material, entry, inLibrary, html) {
+function renderDetailMaterial(material, html) {
   const id = escapeHtml(material.id);
-  const topic = materialSource(entry);
   const favorite = Boolean(material.favorite);
   const display = materialDisplay(material, html);
   const type = MATERIAL_TYPES[material.category].types[material.subtype];
   const translationHtml = display.translationHtml || escapeHtml(display.translation || "");
-  if (!inLibrary) {
-    const strategy = material.category === "strategy";
-    const title = strategy ? `<h3 class="material-title">${escapeHtml(material.title || type)}</h3>` : "";
-    return `<article class="library-card material-card material-compact" data-material-id="${id}" data-category="${material.category}">
+  const strategy = material.category === "strategy";
+  const title = strategy ? `<h3 class="material-title">${escapeHtml(material.title || type)}</h3>` : "";
+  return `<article class="library-card material-card material-compact" data-material-id="${id}" data-category="${material.category}">
       <div class="material-compact-header">
         <div class="material-compact-heading">
           ${title || (display.html ? `<div class="material-copy">${display.html}</div>` : `<div class="material-copy material-translation">${translationHtml}</div>`)}
@@ -108,27 +109,65 @@ function renderMaterialCard(material, entry, inLibrary, html) {
         ${material.tags?.length ? `<div class="material-meta">${material.tags.map((tag) => `<span class="material-tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
       </details>` : ""}
     </article>`;
+}
+
+function libraryMaterialLabels(material, entry) {
+  const type = MATERIAL_TYPES[material.category].types[material.subtype];
+  return `<span class="library-tag">${escapeHtml(materialSource(entry) || "未分类")}</span>
+    <span>${type}</span><span>${entry.mode === "task1" ? "Task 1" : "Task 2"}</span>`;
+}
+
+function libraryReviewSelect(material) {
+  return `<select data-material-review data-status="${material.reviewStatus}" aria-label="复习状态">
+    ${materialOptions(Object.entries(MATERIAL_REVIEW), material.reviewStatus)}
+  </select>`;
+}
+
+function libraryMaterialPreview(material, html) {
+  const display = materialDisplay(material, html, { library: true });
+  const lines = materialPlainText(display.html).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  let [first = "", ...rest] = lines;
+  let translation = display.translationHtml ? materialPlainText(display.translationHtml) : display.translation || "";
+  // A block-wrapped expression can still start with a bilingual line.
+  if (!translation && material.category === "expression") {
+    const divider = first.match(libraryBilingualDivider)?.[0];
+    if (divider) {
+      translation = first.slice(divider.length);
+      first = divider.replace(/[:：]\s*$/, "").trimEnd();
+    }
+    else if (/^[A-Za-z]/.test(first) && /^\p{Script=Han}/u.test(rest[0] || "")) translation = rest.shift();
   }
-  return `<article class="library-card material-card" data-material-id="${id}" data-category="${material.category}">
-    ${material.category === "strategy" ? `<h3 class="material-title">${escapeHtml(material.title || type)}</h3>` : ""}
-    ${display.html ? `<div class="material-copy">${display.html}</div>` : ""}
-    <div class="material-meta">
-      <span class="library-tag">${escapeHtml(topic || "未分类")}</span>
-      ${material.category !== "strategy" || material.title ? `<span>${type}</span>` : ""}
-      <span>${entry.mode === "task1" ? "Task 1" : "Task 2"}</span>
-    </div>
-    ${translationHtml ? `<div class="material-detail material-translation">${translationHtml}</div>` : ""}
-    ${material.context ? `<div class="material-detail">使用场景 · ${escapeHtml(material.context)}</div>` : ""}
-    ${material.note ? `<div class="material-detail">备注 · ${escapeHtml(material.note)}</div>` : ""}
-    ${material.tags?.length ? `<div class="material-meta">${material.tags.map((tag) => `<span class="material-tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
-    <div class="material-footer">
-      <button type="button" class="material-source" data-material-action="source">来源 · ${escapeHtml(entry.title || "未命名复盘")}</button>
-      <div class="material-actions">
-      <button type="button" class="secondary-button" data-material-action="edit">编辑</button>
-      <button type="button" class="secondary-button" data-material-action="favorite" aria-pressed="${favorite}">${favorite ? "已收藏" : "收藏"}</button>
-      <button type="button" class="remove-button" data-material-action="delete">删除</button>
-      <select data-material-review data-status="${material.reviewStatus}" aria-label="复习状态">${materialOptions(Object.entries(MATERIAL_REVIEW), material.reviewStatus)}</select>
-      </div>
+  const title = material.title || first || translation;
+  if (title === translation) translation = "";
+  const detail = [material.title ? first : "", ...rest, material.context, material.note].filter(Boolean).join(" · ");
+  return { title, translation, detail };
+}
+
+function renderLibraryMaterial({ material, entry, html }) {
+  const preview = libraryMaterialPreview(material, html);
+  const favorite = Boolean(material.favorite);
+  return `<article class="library-card material-card library-preview" data-material-id="${escapeHtml(material.id)}">
+    <h3 class="library-preview-title">
+      <button class="library-open-material" type="button" data-material-action="open" aria-haspopup="dialog">
+        <span>${escapeHtml(preview.title)}</span>
+      </button>
+    </h3>
+    ${preview.translation || preview.detail ? `<div class="library-preview-copy">
+      ${preview.translation ? `<p class="library-preview-translation">${escapeHtml(preview.translation)}</p>` : ""}
+      ${preview.detail ? `<p class="library-preview-excerpt">${escapeHtml(preview.detail)}</p>` : ""}
+    </div>` : ""}
+    <div class="material-meta library-preview-meta">${libraryMaterialLabels(material, entry)}</div>
+    <div class="material-actions library-preview-actions">
+      <button class="text-button compact-action material-favorite" type="button" data-material-action="favorite"
+        title="${favorite ? "取消收藏" : "收藏素材"}" aria-label="收藏素材" aria-pressed="${favorite}">${favorite ? "★" : "☆"}</button>
+      ${libraryReviewSelect(material)}
+      <details class="entry-actions-menu detail-item-menu">
+        <summary class="text-button compact-action" aria-label="素材更多操作" title="更多操作">⋯</summary>
+        <div class="entry-actions-popover">
+          <button class="secondary-button" type="button" data-material-action="edit">编辑素材</button>
+          <button class="remove-button" type="button" data-material-action="delete">删除素材</button>
+        </div>
+      </details>
     </div>
   </article>`;
 }
@@ -158,7 +197,26 @@ function renderMissingMaterials(records) {
 }
 
 const libraryFilterIds = ["librarySearch", "libraryTask", "libraryTopic", "librarySubtype", "librarySource", "libraryReview", "libraryTag", "libraryFavorites"];
+const LIBRARY_PAGE_SIZES = [12, 16, 24];
+const LIBRARY_DISPLAY_KEY = "ielts-writing-library-display";
+let libraryView = "grid";
+let libraryPageSize = 16;
 let librarySearchTimer;
+let openLibraryMaterialId = "";
+
+function loadLibraryDisplay() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LIBRARY_DISPLAY_KEY));
+    if (saved?.view === "list") libraryView = "list";
+    if (LIBRARY_PAGE_SIZES.includes(saved?.size)) libraryPageSize = saved.size;
+  } catch { /* Display preferences are optional. */ }
+}
+
+function saveLibraryDisplay() {
+  try {
+    localStorage.setItem(LIBRARY_DISPLAY_KEY, JSON.stringify({ view: libraryView, size: libraryPageSize }));
+  } catch { /* Keep the selection for this session. */ }
+}
 
 function getLibraryViewState() {
   return {
@@ -206,7 +264,7 @@ function renderDetailMaterials() {
   const materials = state.materials.filter((item) => item.sourceEntryId === entry.id && item.category === state.bankTab);
   const { cards, missing } = partitionMaterialCards(materials, new Map([[entry.id, entry]]));
   $("#detailMaterials").innerHTML = (cards.length
-    ? cards.map(({ material, html }) => renderMaterialCard(material, entry, false, html)).join("")
+    ? cards.map(({ material, html }) => renderDetailMaterial(material, html)).join("")
     : '<div class="empty-library"><strong>暂无相关素材</strong><button type="button" class="text-button" data-add-material>添加素材</button></div>') +
     renderMissingMaterials(missing);
 }
@@ -283,24 +341,98 @@ function renderLibraryContent() {
   }).sort((a, b) => Number(Boolean(b.material.favorite)) - Number(Boolean(a.material.favorite)) ||
     getDateTime(b.entry.practiceDate) - getDateTime(a.entry.practiceDate));
 
-  const pages = Math.max(1, Math.ceil(matches.length / LIBRARY_PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(matches.length / libraryPageSize));
   state.libraryPage = Math.min(state.libraryPage, pages);
-  const items = matches.slice((state.libraryPage - 1) * LIBRARY_PAGE_SIZE, state.libraryPage * LIBRARY_PAGE_SIZE);
+  const items = matches.slice((state.libraryPage - 1) * libraryPageSize, state.libraryPage * libraryPageSize);
   const hasFilters = renderActiveFilters();
   const category = MATERIAL_TYPES[state.libraryBankTab].label;
   const emptyHint = state.libraryBankTab === "strategy" ? "可从本篇思路收藏可复用的写法，也可以手动添加。" : "从作文详情收藏，或直接添加一条素材。";
   els.libraryContent.innerHTML = (items.length
-    ? `<div class="library-card-grid">${items.map(({ material, entry, html }) => renderMaterialCard(material, entry, true, html)).join("")}</div>`
+    ? `<div class="library-results library-results--${libraryView}">${items.map(renderLibraryMaterial).join("")}</div>`
     : hasFilters
       ? '<div class="empty-library"><strong>没有符合条件的素材</strong><p>试试缩短关键词，或清除部分筛选条件。</p><button type="button" class="text-button" data-reset-library>重置筛选</button></div>'
       : `<div class="empty-library"><strong>还没有${category}</strong><p>${emptyHint}</p></div>`) + renderMissingMaterials(missing);
   $("#libraryTotal").textContent = `全部 ${state.materials.length} 条素材`;
   $("#libraryResultCount").textContent = `找到 ${matches.length} 条`;
+  for (const button of $("#libraryViewSwitch").children) {
+    const active = button.dataset.libraryView === libraryView;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
   renderLibraryPagination(pages, matches.length);
   $("#libraryFilters").querySelectorAll("select").forEach(enhanceSelect);
   els.libraryContent.querySelectorAll("[data-material-review]").forEach(enhanceSelect);
   syncAllSelects();
   rememberWorkspace();
+}
+
+function renderLibraryPagination(pageCount, total) {
+  const current = state.libraryPage;
+  const numbers = [...new Set([1, current - 1, current, current + 1, pageCount])].filter((page) => page >= 1 && page <= pageCount);
+  const buttons = numbers.map((page, index) =>
+    `${index && page - numbers[index - 1] > 1 ? '<span aria-hidden="true">…</span>' : ""}
+    <button class="secondary-button" type="button" data-library-page="${page}" aria-label="第 ${page} 页"
+      ${page === current ? 'aria-current="page"' : ""}>${page}</button>`,
+  ).join("");
+  els.libraryPagination.innerHTML = `
+    <span class="library-page-count">第 ${total ? current : 0} / ${total ? pageCount : 0} 页 · 共 ${total} 条</span>
+    ${pageCount > 1 ? `<div class="library-page-buttons">
+      <button class="secondary-button" type="button" data-library-page="${current - 1}" aria-label="上一页" ${current === 1 ? "disabled" : ""}>‹</button>
+      ${buttons}
+      <button class="secondary-button" type="button" data-library-page="${current + 1}" aria-label="下一页" ${current === pageCount ? "disabled" : ""}>›</button>
+    </div>` : ""}
+    <label class="library-page-size"><span>每页</span><select id="libraryPageSize" aria-label="每页条数">
+      ${materialOptions(LIBRARY_PAGE_SIZES.map((size) => [String(size), `${size} 条`]), String(libraryPageSize))}
+    </select></label>`;
+  enhanceSelect($("#libraryPageSize"));
+}
+
+function materialRecord(target) {
+  const id = target.closest("[data-material-id]")?.dataset.materialId;
+  const material = state.materials.find((item) => item.id === id);
+  const entry = material && state.entries.find((item) => item.id === material.sourceEntryId);
+  return entry ? { material, entry } : null;
+}
+
+function renderLibraryDrawer(material, entry) {
+  const content = $("#libraryDrawerContent");
+  const display = materialDisplay(material, materialBodyHtml(material, entry), { library: true });
+  const translation = display.translationHtml || escapeHtml(display.translation || "");
+  const scrollTop = content.scrollTop;
+  $("#libraryDrawer").dataset.materialId = material.id;
+  content.innerHTML = `
+    <div class="material-meta">${libraryMaterialLabels(material, entry)}</div>
+    ${material.title ? `<h3>${escapeHtml(material.title)}</h3>` : ""}
+    ${display.html ? `<div class="library-drawer-expression">${display.html}</div>` : ""}
+    ${translation ? `<div class="library-drawer-translation">${translation}</div>` : ""}
+    <dl class="library-drawer-fields">
+      ${material.context ? `<div><dt>使用场景</dt><dd>${escapeHtml(material.context)}</dd></div>` : ""}
+      ${material.note ? `<div><dt>备注</dt><dd>${escapeHtml(material.note)}</dd></div>` : ""}
+      ${material.tags?.length ? `<div><dt>标签</dt><dd>${escapeHtml(material.tags.join(" · "))}</dd></div>` : ""}
+      <div><dt>来源作文</dt><dd><button type="button" class="material-source" data-material-action="source">${escapeHtml(entry.title || "未命名复盘")}</button></dd></div>
+    </dl>`;
+  $("#libraryDrawerActions").innerHTML = `
+    <button type="button" class="primary-button" data-material-action="edit">编辑素材</button>
+    <button type="button" class="secondary-button" data-material-action="favorite" aria-pressed="${Boolean(material.favorite)}">${material.favorite ? "取消收藏" : "收藏"}</button>
+    ${libraryReviewSelect(material)}
+    <button type="button" class="remove-button" data-material-action="delete">删除</button>`;
+  enhanceSelect($("#libraryDrawer [data-material-review]"));
+  pruneInactiveSelects();
+  content.scrollTop = scrollTop;
+}
+
+function openLibraryDrawer(material, entry) {
+  const drawer = $("#libraryDrawer");
+  openLibraryMaterialId = material.id;
+  $("#libraryDrawerContent").scrollTop = 0;
+  renderLibraryDrawer(material, entry);
+  closeAllSelects();
+  drawer.showModal();
+}
+
+function focusLibraryMaterial(id, selector = '[data-material-action="open"]') {
+  const card = els.libraryContent.querySelector(`.library-preview[data-material-id="${CSS.escape(id)}"]`);
+  (card?.querySelector(selector) || $("#librarySearch")).focus({ preventScroll: true });
 }
 
 function addMaterials(entry, materials) {
@@ -351,9 +483,8 @@ function openMaterialEditor(data = {}) {
 }
 
 function materialFormSnapshot() {
-  return JSON.stringify([...$("#materialForm").querySelectorAll("select, input, textarea, [contenteditable]")].map((field) =>
-    field.isContentEditable ? field.innerHTML : field.value,
-  ));
+  return JSON.stringify(Object.fromEntries([...$("#materialForm").querySelectorAll("select, input, textarea, [contenteditable]")]
+    .map((field) => [field.id, field.isContentEditable ? field.innerHTML : field.value])));
 }
 
 function requestMaterialClose() {
@@ -376,13 +507,11 @@ function saveMaterial(event) {
     return;
   }
   const existing = state.materials.find(({ id }) => id === form.dataset.materialId);
-  const unchangedBody = existing && safeMaterialHtml(existing.contentHtml || "") === contentHtml;
   const title = $("#materialCategory").value === "strategy" ? $("#materialTitle").value.trim() : "";
   const material = {
     id: existing?.id || `material-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`,
     category: $("#materialCategory").value, subtype: $("#materialSubtype").value,
-    contentHtml: unchangedBody ? existing.contentHtml : contentHtml,
-    plainText: unchangedBody ? existing.plainText : plainText,
+    contentHtml, plainText,
     ...(title || existing?.title ? { title } : {}),
     translation, context: $("#materialContext").value.trim(),
     note: $("#materialNote").value.trim(),
@@ -390,25 +519,47 @@ function saveMaterial(event) {
     sourceEntryId: entry.id, sourceField: form.dataset.sourceField || "manual",
     reviewStatus: existing?.reviewStatus || "new", favorite: existing?.favorite ?? Boolean(form.dataset.sourceField),
   };
-  if (existing) Object.assign(existing, material);
-  else addMaterials(entry, [material]);
+  if (existing) {
+    const initial = JSON.parse(form.dataset.initial);
+    const current = JSON.parse(materialFormSnapshot());
+    // Don't normalize unrelated fields just because the user opened the editor.
+    for (const [field, keys] of Object.entries({ materialBody: ["contentHtml", "plainText"],
+      materialCategory: ["category"], materialSubtype: ["subtype"], materialTitle: ["title"],
+      materialTranslation: ["translation"], materialContext: ["context"], materialNote: ["note"], materialTags: ["tags"] })) {
+      if (initial[field] !== current[field]) {
+        for (const key of keys) if (Object.hasOwn(material, key)) existing[key] = material[key];
+      }
+    }
+    if (material.category !== "strategy" && initial.materialCategory === "strategy" && existing.title) existing.title = "";
+  } else addMaterials(entry, [material]);
   if (currentEntry()) state.bankTab = material.category;
-  else if (state.libraryBankTab !== material.category) {
+  else if (!existing && state.libraryBankTab !== material.category) {
     state.libraryBankTab = material.category;
     $("#librarySubtype").value = "";
   }
   $("#materialDialog").close();
   refreshMaterials();
-  const card = document.querySelector(`.material-card[data-material-id="${CSS.escape(material.id)}"]`);
-  const edit = card?.querySelector('[data-material-action="edit"]');
-  const focus = edit?.getClientRects().length ? edit : card?.querySelector(".detail-item-menu summary");
-  focus?.focus({ preventScroll: true });
+  if ($("#libraryDrawer").open) $("#libraryDrawer [data-material-action=edit]")?.focus({ preventScroll: true });
+  else if (!currentEntry()) focusLibraryMaterial(material.id);
+  else {
+    const card = $("#detailMaterials").querySelector(`.material-card[data-material-id="${CSS.escape(material.id)}"]`);
+    const edit = card?.querySelector('[data-material-action="edit"]');
+    const focus = edit?.getClientRects().length ? edit : card?.querySelector(".detail-item-menu summary");
+    focus?.focus({ preventScroll: true });
+  }
   showToast(existing ? "素材已保存" : "已添加到素材库");
 }
 
 function refreshMaterials() {
   persist();
-  if (!els.libraryView.classList.contains("hidden")) renderLibrary();
+  if (!els.libraryView.classList.contains("hidden")) {
+    renderLibrary();
+    if ($("#libraryDrawer").open) {
+      const record = materialRecord($("#libraryDrawer"));
+      if (record) renderLibraryDrawer(record.material, record.entry);
+      else $("#libraryDrawer").close();
+    }
+  }
   else {
     renderDetailMaterials();
     rememberWorkspace();
@@ -430,6 +581,7 @@ function openMaterialFromCorrection(correction, entry) {
 }
 
 function bindMaterialEvents() {
+  loadLibraryDisplay();
   $("#materialForm").addEventListener("submit", saveMaterial);
   $("#materialCancel").addEventListener("click", requestMaterialClose);
   $("#materialClose").addEventListener("click", requestMaterialClose);
@@ -516,7 +668,49 @@ function bindMaterialEvents() {
     state.libraryPage = 1;
     renderLibrary();
   });
-  for (const list of [els.libraryContent, $("#detailMaterials")]) {
+  $("#libraryViewSwitch").addEventListener("click", (event) => {
+    const view = event.target.closest("[data-library-view]")?.dataset.libraryView;
+    if (!view || view === libraryView) return;
+    libraryView = view;
+    saveLibraryDisplay();
+    renderLibraryContent();
+  });
+  els.libraryPagination.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-library-page]");
+    if (!button || button.disabled || Number(button.dataset.libraryPage) === state.libraryPage) return;
+    state.libraryPage = Number(button.dataset.libraryPage);
+    renderLibraryContent();
+    els.libraryContent.scrollIntoView({ block: "start" });
+    els.libraryPagination.querySelector('[aria-current="page"]')?.focus({ preventScroll: true });
+  });
+  els.libraryPagination.addEventListener("change", (event) => {
+    if (event.target.id !== "libraryPageSize") return;
+    const size = Number(event.target.value);
+    if (!LIBRARY_PAGE_SIZES.includes(size)) return;
+    const firstIndex = (state.libraryPage - 1) * libraryPageSize;
+    libraryPageSize = size;
+    state.libraryPage = Math.floor(firstIndex / libraryPageSize) + 1;
+    saveLibraryDisplay();
+    renderLibraryContent();
+    $("#libraryPageSize").__dd.trigger.focus({ preventScroll: true });
+  });
+  const drawer = $("#libraryDrawer");
+  $("#closeLibraryDrawer").addEventListener("click", () => drawer.close());
+  drawer.addEventListener("click", (event) => {
+    if (event.target === drawer) {
+      const { left, right, top, bottom } = drawer.getBoundingClientRect();
+      if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) drawer.close();
+    }
+  });
+  drawer.addEventListener("close", () => {
+    closeAllSelects();
+    if (drawer.open) return;
+    if (!els.libraryView.classList.contains("hidden")) focusLibraryMaterial(openLibraryMaterialId);
+    openLibraryMaterialId = "";
+    delete drawer.dataset.materialId;
+  });
+  $("#libraryDrawerContent").addEventListener("scroll", closeAllSelects);
+  for (const list of [els.libraryContent, $("#detailMaterials"), drawer]) {
     list.addEventListener("click", (event) => {
       if (event.target.closest("[data-add-material]")) {
         openMaterialEditor();
@@ -527,13 +721,17 @@ function bindMaterialEvents() {
         $("#librarySearch").focus();
         return;
       }
-      const action = event.target.closest("[data-material-action]")?.dataset.materialAction;
-      const card = event.target.closest("[data-material-id]");
-      if (!action || !card) return;
-      const material = state.materials.find(({ id }) => id === card.dataset.materialId);
-      const entry = state.entries.find(({ id }) => id === material?.sourceEntryId);
-      if (!entry) return;
-      if (action === "source") {
+      const control = event.target.closest("[data-material-action]");
+      const action = control?.dataset.materialAction;
+      if (!action) return;
+      const record = materialRecord(control);
+      if (!record) return;
+      const { material, entry } = record;
+      if (control.closest("details.detail-item-menu")) control.closest("details.detail-item-menu").open = false;
+      if (action === "open") {
+        openLibraryDrawer(material, entry);
+      } else if (action === "source") {
+        drawer.close();
         state.currentId = entry.id;
         state.mode = entry.mode;
         state.bankTab = material.category;
@@ -545,23 +743,32 @@ function bindMaterialEvents() {
       } else if (action === "favorite") {
         material.favorite = !material.favorite;
         refreshMaterials();
-        list.querySelector(`[data-material-id="${CSS.escape(material.id)}"] [data-material-action="favorite"]`)?.focus({ preventScroll: true });
+        if (list === drawer) drawer.querySelector('[data-material-action="favorite"]')?.focus({ preventScroll: true });
+        else if (list === els.libraryContent) focusLibraryMaterial(material.id, '[data-material-action="favorite"]');
+        else list.querySelector(`[data-material-id="${CSS.escape(material.id)}"] [data-material-action="favorite"]`)?.focus({ preventScroll: true });
         showToast(material.favorite ? "已收藏素材" : "已取消收藏");
       } else if (action === "delete" && window.confirm("确定删除这条素材吗？")) {
         removeEntryMaterials(entry, ({ id }) => id === material.id);
         refreshMaterials();
+        if (list === els.libraryContent) focusLibraryMaterial(material.id);
         showToast("已删除素材");
       }
     });
   }
-  els.libraryContent.addEventListener("change", (event) => {
-    if (!event.target.matches("[data-material-review]")) return;
-    const material = state.materials.find(({ id }) => id === event.target.closest("[data-material-id]").dataset.materialId);
-    if (!material) return;
-    material.reviewStatus = event.target.value;
-    refreshMaterials();
-    const reviewSelect = els.libraryContent.querySelector(`[data-material-id="${CSS.escape(material.id)}"] [data-material-review]`);
-    reviewSelect?.__dd?.trigger.focus({ preventScroll: true });
-    showToast(`复习状态已更新为「${MATERIAL_REVIEW[material.reviewStatus]}」`);
-  });
+  for (const container of [els.libraryContent, drawer]) {
+    container.addEventListener("change", (event) => {
+      if (!event.target.matches("[data-material-review]")) return;
+      const record = materialRecord(event.target);
+      if (!record || !Object.hasOwn(MATERIAL_REVIEW, event.target.value)) return;
+      const { material } = record;
+      material.reviewStatus = event.target.value;
+      refreshMaterials();
+      const selector = "[data-material-review]";
+      const reviewSelect = container === drawer ? drawer.querySelector(selector) :
+        els.libraryContent.querySelector(`[data-material-id="${CSS.escape(material.id)}"] ${selector}`);
+      if (reviewSelect) reviewSelect.__dd.trigger.focus({ preventScroll: true });
+      else focusLibraryMaterial(material.id);
+      showToast(`复习状态已更新为「${MATERIAL_REVIEW[material.reviewStatus]}」`);
+    });
+  }
 }
